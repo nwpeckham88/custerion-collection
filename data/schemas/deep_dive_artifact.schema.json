@@ -1,0 +1,257 @@
+{
+  "$defs": {
+    "DeepDiveSection": {
+      "properties": {
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "content",
+        "confidence"
+      ],
+      "title": "DeepDiveSection",
+      "type": "object"
+    },
+    "FilmIdentity": {
+      "properties": {
+        "canonical_id": {
+          "title": "Canonical Id",
+          "type": "string"
+        },
+        "external_ids": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "External Ids",
+          "type": "object"
+        },
+        "key_credits": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Key Credits",
+          "type": "array"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "runtime_minutes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Minutes"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "title": "Year",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "title",
+        "year",
+        "canonical_id"
+      ],
+      "title": "FilmIdentity",
+      "type": "object"
+    },
+    "FollowUpMediaItem": {
+      "properties": {
+        "kind": {
+          "enum": [
+            "video",
+            "article",
+            "related_film"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        },
+        "relevance_score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Relevance Score",
+          "type": "number"
+        },
+        "source_confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Source Confidence",
+          "type": "number"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "rationale",
+        "relevance_score",
+        "source_confidence"
+      ],
+      "title": "FollowUpMediaItem",
+      "type": "object"
+    },
+    "SourceCitation": {
+      "properties": {
+        "claim_ref": {
+          "title": "Claim Ref",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "retrieved_at": {
+          "format": "date-time",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "format": "uri",
+              "maxLength": 2083,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "provider",
+        "source_id",
+        "confidence",
+        "claim_ref"
+      ],
+      "title": "SourceCitation",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "citations": {
+      "items": {
+        "$ref": "#/$defs/SourceCitation"
+      },
+      "title": "Citations",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "film": {
+      "$ref": "#/$defs/FilmIdentity"
+    },
+    "follow_up_media": {
+      "items": {
+        "$ref": "#/$defs/FollowUpMediaItem"
+      },
+      "title": "Follow Up Media",
+      "type": "array"
+    },
+    "known_unknowns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Known Unknowns",
+      "type": "array"
+    },
+    "personalized_intro": {
+      "title": "Personalized Intro",
+      "type": "string"
+    },
+    "sections": {
+      "items": {
+        "$ref": "#/$defs/DeepDiveSection"
+      },
+      "title": "Sections",
+      "type": "array"
+    },
+    "watch_next": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Watch Next",
+      "type": "array"
+    }
+  },
+  "required": [
+    "film",
+    "personalized_intro",
+    "sections",
+    "watch_next",
+    "known_unknowns",
+    "follow_up_media",
+    "citations"
+  ],
+  "title": "DeepDiveArtifact",
+  "type": "object"
+}

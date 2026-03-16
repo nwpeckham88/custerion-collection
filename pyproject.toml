@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "custerion-collection"
+version = "0.1.0"
+description = "CrewAI-powered film deep-dive generator"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "crewai>=0.108.0",
+  "python-dotenv>=1.0.1",
+  "pydantic>=2.10.0",
+]
+
+[project.scripts]
+custerion = "custerion_collection.main:run"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

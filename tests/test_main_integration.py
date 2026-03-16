@@ -1,29 +1,21 @@
 from __future__ import annotations
 
-import tempfile
 import unittest
 from argparse import Namespace
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import call, patch
 
-from custerion_collection.identity import IdentityResolutionResult
 from custerion_collection.main import run
+from custerion_collection.service import DeepDiveRunResult
 
 
 class TestMainIntegration(unittest.TestCase):
     @patch("custerion_collection.main._parser")
-    @patch("custerion_collection.main.write_run_diagnostics")
-    @patch("custerion_collection.main.write_artifact_bundle")
-    @patch("custerion_collection.main.build_deep_dive_artifact")
-    @patch("custerion_collection.main.resolve_canonical_film_identity")
-    @patch("custerion_collection.crew.build_deep_dive_crew")
-    def test_run_success_persists_bundle_and_diagnostics(
+    @patch("custerion_collection.main.execute_deep_dive")
+    @patch("builtins.print")
+    def test_run_success_prints_outputs(
         self,
-        mock_build_crew,
-        mock_resolve_identity,
-        mock_build_artifact,
-        mock_write_bundle,
-        mock_write_diagnostics,
+        mock_print,
+        mock_execute_deep_dive,
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
@@ -34,41 +26,38 @@ class TestMainIntegration(unittest.TestCase):
             process_mode="sequential",
             dry_run=False,
         )
+        mock_execute_deep_dive.return_value = DeepDiveRunResult(
+            title="The Red Shoes",
+            markdown="## History\nContext https://example.com",
+            status="success",
+            warnings=["sample warning"],
+            diagnostics_path="/tmp/diag.json",
+            markdown_path="/tmp/out.md",
+            artifact_json_path="/tmp/out.json",
+        )
 
-        mock_crew = MagicMock()
-        mock_crew.kickoff.return_value = "## History\nContext https://example.com"
-        mock_build_crew.return_value = mock_crew
-        mock_resolve_identity.return_value = IdentityResolutionResult(identity=None, error=None)
+        run()
 
-        artifact = MagicMock()
-        artifact.sections = [MagicMock(), MagicMock()]
-        artifact.citations = [MagicMock()]
-        mock_build_artifact.return_value = artifact
-
-        with tempfile.TemporaryDirectory() as tmp:
-            mock_write_bundle.return_value = (Path(tmp) / "out.md", Path(tmp) / "out.json")
-            mock_write_diagnostics.return_value = Path(tmp) / "diag.json"
-
-            run()
-
-        self.assertTrue(mock_write_bundle.called)
-        self.assertTrue(mock_write_diagnostics.called)
-        self.assertEqual(mock_write_diagnostics.call_args.args[0].status, "success")
-        self.assertEqual(mock_build_crew.call_args.kwargs["process_mode_override"], "sequential")
+        mock_execute_deep_dive.assert_called_once_with(
+            title="The Red Shoes",
+            suggestion_mode=False,
+            process_mode_override="sequential",
+            dry_run=False,
+        )
+        mock_print.assert_has_calls(
+            [
+                call("Deep-dive markdown saved to: /tmp/out.md"),
+                call("Deep-dive artifact saved to: /tmp/out.json"),
+                call("Warning: sample warning"),
+                call("Run diagnostics saved to: /tmp/diag.json"),
+            ]
+        )
 
     @patch("custerion_collection.main._parser")
-    @patch("custerion_collection.main.write_run_diagnostics")
-    @patch("custerion_collection.main.write_markdown_artifact")
-    @patch("custerion_collection.main.build_deep_dive_artifact")
-    @patch("custerion_collection.main.resolve_canonical_film_identity")
-    @patch("custerion_collection.crew.build_deep_dive_crew")
-    def test_run_degraded_when_structured_export_fails(
+    @patch("custerion_collection.main.execute_deep_dive")
+    def test_run_exits_when_service_raises_value_error(
         self,
-        mock_build_crew,
-        mock_resolve_identity,
-        mock_build_artifact,
-        mock_write_markdown,
-        mock_write_diagnostics,
+        mock_execute_deep_dive,
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
@@ -79,64 +68,45 @@ class TestMainIntegration(unittest.TestCase):
             process_mode=None,
             dry_run=False,
         )
+        mock_execute_deep_dive.side_effect = ValueError("Ambiguous title")
 
-        mock_crew = MagicMock()
-        mock_crew.kickoff.return_value = "freeform output"
-        mock_build_crew.return_value = mock_crew
-        mock_resolve_identity.return_value = IdentityResolutionResult(identity=None, error=None)
-        mock_build_artifact.side_effect = ValueError("bad shape")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            mock_write_markdown.return_value = Path(tmp) / "out.md"
-            mock_write_diagnostics.return_value = Path(tmp) / "diag.json"
+        with self.assertRaises(SystemExit) as error:
             run()
 
-        self.assertTrue(mock_write_markdown.called)
-        self.assertEqual(mock_write_diagnostics.call_args.args[0].status, "degraded")
+        self.assertEqual(str(error.exception), "Ambiguous title")
 
     @patch("custerion_collection.main._parser")
-    @patch("custerion_collection.main.write_run_diagnostics")
-    @patch("custerion_collection.main.resolve_canonical_film_identity")
-    @patch("custerion_collection.crew.build_deep_dive_crew")
-    def test_run_failed_when_crew_raises(
+    @patch("builtins.print")
+    @patch("custerion_collection.main.export_deep_dive_schema")
+    @patch("custerion_collection.main.execute_deep_dive")
+    def test_run_export_schema_path_exits_early(
         self,
-        mock_build_crew,
-        mock_resolve_identity,
-        mock_write_diagnostics,
+        mock_execute_deep_dive,
+        mock_export_schema,
+        mock_print,
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
-            title="The Red Shoes",
+            title=None,
             suggest=False,
-            export_schema=False,
-            schema_output=None,
+            export_schema=True,
+            schema_output="/tmp/schema.json",
             process_mode=None,
             dry_run=False,
         )
+        mock_export_schema.return_value = "/tmp/schema.json"
 
-        mock_crew = MagicMock()
-        mock_crew.kickoff.side_effect = RuntimeError("boom")
-        mock_build_crew.return_value = mock_crew
-        mock_resolve_identity.return_value = IdentityResolutionResult(identity=None, error=None)
+        run()
 
-        with tempfile.TemporaryDirectory() as tmp:
-            mock_write_diagnostics.return_value = Path(tmp) / "diag.json"
-            with self.assertRaises(RuntimeError):
-                run()
-
-        self.assertEqual(mock_write_diagnostics.call_args.args[0].status, "failed")
+        mock_export_schema.assert_called_once_with(output_path="/tmp/schema.json")
+        mock_execute_deep_dive.assert_not_called()
+        mock_print.assert_called_once_with("Schema saved to: /tmp/schema.json")
 
     @patch("custerion_collection.main._parser")
-    @patch("custerion_collection.main.write_run_diagnostics")
-    @patch("custerion_collection.main.write_artifact_bundle")
-    @patch("custerion_collection.main.build_deep_dive_artifact")
-    @patch("custerion_collection.crew.build_deep_dive_crew")
-    def test_run_dry_run_skips_crew_kickoff(
+    @patch("custerion_collection.main.execute_deep_dive")
+    def test_run_dry_run_delegates_to_service(
         self,
-        mock_build_crew,
-        mock_build_artifact,
-        mock_write_bundle,
-        mock_write_diagnostics,
+        mock_execute_deep_dive,
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
@@ -147,51 +117,39 @@ class TestMainIntegration(unittest.TestCase):
             process_mode="hierarchical",
             dry_run=True,
         )
+        mock_execute_deep_dive.return_value = DeepDiveRunResult(
+            title="The Red Shoes",
+            markdown="dry run",
+            status="success",
+            warnings=["Dry-run mode enabled: CrewAI kickoff skipped."],
+            diagnostics_path="/tmp/diag.json",
+            markdown_path="/tmp/out.md",
+            artifact_json_path="/tmp/out.json",
+        )
 
-        artifact = MagicMock()
-        artifact.sections = [MagicMock()]
-        artifact.citations = [MagicMock()]
-        mock_build_artifact.return_value = artifact
+        run()
 
-        with tempfile.TemporaryDirectory() as tmp:
-            mock_write_bundle.return_value = (Path(tmp) / "out.md", Path(tmp) / "out.json")
-            mock_write_diagnostics.return_value = Path(tmp) / "diag.json"
-            run()
-
-        self.assertFalse(mock_build_crew.called)
-        self.assertTrue(mock_write_bundle.called)
-        diagnostics = mock_write_diagnostics.call_args.args[0]
-        self.assertEqual(diagnostics.status, "success")
-        self.assertTrue(any("Dry-run mode enabled" in warning for warning in diagnostics.warnings))
+        mock_execute_deep_dive.assert_called_once_with(
+            title="The Red Shoes",
+            suggestion_mode=False,
+            process_mode_override="hierarchical",
+            dry_run=True,
+        )
 
     @patch("custerion_collection.main._parser")
-    @patch("custerion_collection.main.write_run_diagnostics")
-    @patch("custerion_collection.main.resolve_canonical_film_identity")
-    def test_run_fails_early_on_ambiguous_title(
-        self,
-        mock_resolve_identity,
-        mock_write_diagnostics,
-        mock_parser,
-    ) -> None:
+    def test_run_requires_title_or_suggest_or_dry_run(self, mock_parser) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
-            title="Dune",
+            title=None,
             suggest=False,
             export_schema=False,
             schema_output=None,
             process_mode=None,
             dry_run=False,
         )
-        mock_resolve_identity.return_value = IdentityResolutionResult(
-            identity=None,
-            error="Ambiguous title 'Dune'. Provide year.",
-        )
+        with self.assertRaises(SystemExit) as error:
+            run()
 
-        with tempfile.TemporaryDirectory() as tmp:
-            mock_write_diagnostics.return_value = Path(tmp) / "diag.json"
-            with self.assertRaises(SystemExit):
-                run()
-
-        self.assertEqual(mock_write_diagnostics.call_args.args[0].status, "failed")
+        self.assertEqual(str(error.exception), "Provide --title or use --suggest")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 CrewAI-based scaffold for generating personalized film deep-dives.
 
 ## Integrated Stack
-- Backend API: FastAPI (`/health`, `/deep-dive`)
+- Backend API: FastAPI (`/health`, `/deep-dive`, `/artifacts`)
 - Frontend: SvelteKit + Tailwind + shadcn-svelte + Bits UI + Skeleton
 - Frontend-to-backend wiring: SvelteKit server routes at `frontend/src/routes/api/*`
 
@@ -60,6 +60,11 @@ docker compose up --build
 Endpoints:
 - Frontend: `http://localhost:4173`
 - Backend API: `http://localhost:8000`
+
+Proxy endpoints exposed by the frontend server:
+- `GET /api/health`
+- `POST /api/deep-dive`
+- `GET /api/artifacts?limit=20`
 
 The backend container persists generated files via `./data:/app/data`.
 

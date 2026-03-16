@@ -12,6 +12,14 @@
 		{ label: 'Live Test Guardrails', score: '79%' }
 	];
 
+	type ArtifactSummary = {
+		title: string;
+		slug: string;
+		markdown_path: string | null;
+		artifact_json_path: string | null;
+		updated_at: string;
+	};
+
 	let title = $state('The Red Shoes');
 	let dryRun = $state(true);
 	let suggest = $state(false);
@@ -22,6 +30,10 @@
 	let diagnosticsPath = $state('');
 	let runStatus = $state('');
 	let resultMarkdown = $state('');
+	let runWarnings = $state<string[]>([]);
+	let artifacts = $state<ArtifactSummary[]>([]);
+	let artifactsLoading = $state(false);
+	let artifactsError = $state('');
 
 	onMount(async () => {
 		try {
@@ -30,11 +42,36 @@
 		} catch (error) {
 			backendStatus = `offline (${String(error)})`;
 		}
+
+		await loadArtifacts();
 	});
+
+	async function loadArtifacts(): Promise<void> {
+		artifactsLoading = true;
+		artifactsError = '';
+
+		try {
+			const response = await fetch('/api/artifacts?limit=12');
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'Artifact list request failed');
+			}
+
+			artifacts = Array.isArray(payload) ? payload : [];
+		} catch (error) {
+			artifactsError = String(error);
+		} finally {
+			artifactsLoading = false;
+		}
+	}
 
 	async function runDeepDive(): Promise<void> {
 		loading = true;
 		errorMessage = '';
+		runStatus = '';
+		diagnosticsPath = '';
+		resultMarkdown = '';
+		runWarnings = [];
 
 		try {
 			const response = await fetch('/api/deep-dive', {
@@ -56,6 +93,7 @@
 			runStatus = payload.status;
 			diagnosticsPath = payload.diagnostics_path;
 			resultMarkdown = payload.markdown;
+			runWarnings = Array.isArray(payload.warnings) ? payload.warnings : [];
 		} catch (error) {
 			errorMessage = String(error);
 		} finally {
@@ -80,8 +118,21 @@
 				Backend: {backendStatus}
 			</div>
 			<div class="flex flex-wrap gap-3">
-				<Button class="preset-filled-primary-500 border-0">Start a Deep Dive</Button>
-				<Button variant="outline">Browse Saved Artifacts</Button>
+				<Button
+					class="preset-filled-primary-500 border-0"
+					onclick={() => document.getElementById('run-deep-dive')?.scrollIntoView({ behavior: 'smooth' })}
+				>
+					Start a Deep Dive
+				</Button>
+				<Button
+					variant="outline"
+					onclick={async () => {
+						await loadArtifacts();
+						document.getElementById('saved-artifacts')?.scrollIntoView({ behavior: 'smooth' });
+					}}
+				>
+					Browse Saved Artifacts
+				</Button>
 			</div>
 
 			<Card.Root class="mt-6 border-black/5 bg-white/85">
@@ -138,11 +189,11 @@
 			</Dialog.Root>
 
 			<div class="rounded-2xl border border-dashed border-black/10 p-4 text-sm text-muted-foreground">
-				Next: connect this shell to your Python backend endpoints and stream generated artifacts directly.
+				Integration status: this UI is live-wired to FastAPI via SvelteKit server routes.
 			</div>
 		</section>
 
-		<section class="space-y-5 rounded-3xl border border-black/5 bg-white/80 p-6 shadow-lg backdrop-blur md:p-8 lg:col-span-2">
+		<section id="run-deep-dive" class="space-y-5 rounded-3xl border border-black/5 bg-white/80 p-6 shadow-lg backdrop-blur md:p-8 lg:col-span-2">
 			<h2 class="text-3xl font-bold">Run Deep Dive</h2>
 			<p class="text-sm text-muted-foreground">This form is fully wired to your backend via SvelteKit server routes.</p>
 
@@ -196,11 +247,52 @@
 				</div>
 			{/if}
 
+			{#if runWarnings.length > 0}
+				<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+					<div class="font-semibold">Warnings</div>
+					<ul class="mt-2 list-disc space-y-1 pl-5">
+						{#each runWarnings as warning}
+							<li>{warning}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
 			{#if resultMarkdown}
 				<div class="max-h-96 overflow-auto rounded-xl border border-black/10 bg-white p-4">
 					<pre class="text-sm whitespace-pre-wrap">{resultMarkdown}</pre>
 				</div>
 			{/if}
+
+			<div id="saved-artifacts" class="space-y-3 rounded-xl border border-black/10 bg-white p-4">
+				<div class="flex items-center justify-between">
+					<h3 class="text-lg font-semibold">Saved Artifacts</h3>
+					<Button variant="outline" onclick={loadArtifacts} disabled={artifactsLoading}>
+						{artifactsLoading ? 'Refreshing...' : 'Refresh'}
+					</Button>
+				</div>
+
+				{#if artifactsError}
+					<div class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">{artifactsError}</div>
+				{:else if artifacts.length === 0}
+					<div class="text-sm text-muted-foreground">No artifacts yet. Run a deep dive to generate one.</div>
+				{:else}
+					<ul class="space-y-2 text-sm">
+						{#each artifacts as artifact}
+							<li class="rounded-lg border border-black/10 px-3 py-2">
+								<div class="font-medium">{artifact.title}</div>
+								<div class="mt-1 text-xs text-muted-foreground">Updated: {artifact.updated_at}</div>
+								{#if artifact.markdown_path}
+									<div class="mt-1 text-xs">Markdown: <code>{artifact.markdown_path}</code></div>
+								{/if}
+								{#if artifact.artifact_json_path}
+									<div class="text-xs">JSON: <code>{artifact.artifact_json_path}</code></div>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
 		</section>
 	</div>
 </main>

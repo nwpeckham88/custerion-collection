@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from custerion_collection.models import DeepDiveArtifact, DeepDiveSection, FilmIdentity, RunDiagnostics
-from custerion_collection.storage import write_artifact_bundle, write_markdown_artifact, write_run_diagnostics
+from custerion_collection.storage import (
+    list_recent_artifacts,
+    write_artifact_bundle,
+    write_markdown_artifact,
+    write_run_diagnostics,
+)
 
 
 class TestStorage(unittest.TestCase):
@@ -70,6 +75,42 @@ class TestStorage(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(path.suffix, ".json")
             self.assertIn('"run_id": "run-123"', path.read_text(encoding="utf-8"))
+
+    def test_list_recent_artifacts_includes_bundle_and_markdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["DATA_DIR"] = tmp
+
+            artifact = DeepDiveArtifact(
+                film=FilmIdentity(title="The Red Shoes", year=1948, canonical_id="local:the-red-shoes:1948"),
+                personalized_intro="intro",
+                sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+                watch_next=[],
+                known_unknowns=[],
+                follow_up_media=[],
+                citations=[],
+                created_at=datetime.now(timezone.utc),
+            )
+
+            write_artifact_bundle(title="The Red Shoes", markdown="bundle", artifact=artifact)
+            write_markdown_artifact("Only Markdown", "markdown-only")
+
+            items = list_recent_artifacts(limit=10)
+
+            self.assertGreaterEqual(len(items), 2)
+            titles = {item["title"] for item in items}
+            self.assertIn("The Red Shoes", titles)
+            self.assertIn("Only Markdown", titles)
+
+    def test_list_recent_artifacts_honors_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["DATA_DIR"] = tmp
+
+            write_markdown_artifact("Film One", "content")
+            write_markdown_artifact("Film Two", "content")
+
+            items = list_recent_artifacts(limit=1)
+
+            self.assertEqual(len(items), 1)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async ({ fetch }) => {
-  const target = `${env.BACKEND_API_URL ?? 'http://localhost:8000'}/health`;
+export const GET: RequestHandler = async ({ url, fetch }) => {
+  const limit = url.searchParams.get('limit') ?? '20';
+  const target = `${env.BACKEND_API_URL ?? 'http://localhost:8000'}/artifacts?limit=${encodeURIComponent(limit)}`;
 
   try {
     const response = await fetch(target);
@@ -15,7 +16,7 @@ export const GET: RequestHandler = async ({ fetch }) => {
     });
   } catch (error) {
     return new Response(
-      JSON.stringify({ detail: `Backend health check failed: ${String(error)}` }),
+      JSON.stringify({ detail: `Backend artifacts request failed: ${String(error)}` }),
       {
         status: 502,
         headers: { 'content-type': 'application/json' }

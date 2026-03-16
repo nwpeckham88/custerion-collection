@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from custerion_collection.service import execute_deep_dive
+from custerion_collection.storage import list_recent_artifacts
+
+
+logger = logging.getLogger(__name__)
 
 
 class DeepDiveRequest(BaseModel):
@@ -25,6 +30,14 @@ class DeepDiveResponse(BaseModel):
     diagnostics_path: str
     markdown_path: str | None = None
     artifact_json_path: str | None = None
+
+
+class ArtifactSummary(BaseModel):
+    title: str
+    slug: str
+    markdown_path: str | None = None
+    artifact_json_path: str | None = None
+    updated_at: str
 
 
 def _origins_from_env() -> list[str]:
@@ -62,7 +75,8 @@ def create_deep_dive(request: DeepDiveRequest) -> DeepDiveResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Deep-dive generation failed: {exc}") from exc
+        logger.exception("Deep-dive generation failed")
+        raise HTTPException(status_code=500, detail="Deep-dive generation failed") from exc
 
     return DeepDiveResponse(
         title=result.title,
@@ -73,3 +87,10 @@ def create_deep_dive(request: DeepDiveRequest) -> DeepDiveResponse:
         markdown_path=result.markdown_path,
         artifact_json_path=result.artifact_json_path,
     )
+
+
+@app.get("/artifacts", response_model=list[ArtifactSummary])
+def get_artifacts(limit: int = 20) -> list[ArtifactSummary]:
+    bounded_limit = max(1, min(limit, 100))
+    raw_items = list_recent_artifacts(limit=bounded_limit)
+    return [ArtifactSummary(**item) for item in raw_items]

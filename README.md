@@ -2,6 +2,11 @@
 
 CrewAI-based scaffold for generating personalized film deep-dives.
 
+## Integrated Stack
+- Backend API: FastAPI (`/health`, `/deep-dive`)
+- Frontend: SvelteKit + Tailwind + shadcn-svelte + Bits UI + Skeleton
+- Frontend-to-backend wiring: SvelteKit server routes at `frontend/src/routes/api/*`
+
 ## What This Scaffold Includes
 - CrewAI orchestration with hierarchical process.
 - Specialist agents and section tasks.
@@ -27,6 +32,41 @@ cp .env.example .env
 
 ```bash
 custerion --title "The Red Shoes"
+```
+
+## Run As API + Frontend (Local)
+Backend API:
+
+```bash
+uvicorn custerion_collection.api:app --host 0.0.0.0 --port 8000
+```
+
+Frontend app:
+
+```bash
+cd frontend
+BACKEND_API_URL=http://localhost:8000 pnpm dev
+```
+
+Open `http://localhost:5173` and use the "Run Deep Dive" form.
+
+## Docker Compose (Internal Testing)
+Build and run both services:
+
+```bash
+docker compose up --build
+```
+
+Endpoints:
+- Frontend: `http://localhost:4173`
+- Backend API: `http://localhost:8000`
+
+The backend container persists generated files via `./data:/app/data`.
+
+Stop services:
+
+```bash
+docker compose down
 ```
 
 ## OpenRouter Setup

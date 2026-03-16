@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -10,6 +11,57 @@
 		{ label: 'Identity Consistency', score: '88%' },
 		{ label: 'Live Test Guardrails', score: '79%' }
 	];
+
+	let title = $state('The Red Shoes');
+	let dryRun = $state(true);
+	let suggest = $state(false);
+	let processMode = $state<'hierarchical' | 'sequential'>('hierarchical');
+	let loading = $state(false);
+	let backendStatus = $state('checking...');
+	let errorMessage = $state('');
+	let diagnosticsPath = $state('');
+	let runStatus = $state('');
+	let resultMarkdown = $state('');
+
+	onMount(async () => {
+		try {
+			const response = await fetch('/api/health');
+			backendStatus = response.ok ? 'online' : `unhealthy (${response.status})`;
+		} catch (error) {
+			backendStatus = `offline (${String(error)})`;
+		}
+	});
+
+	async function runDeepDive(): Promise<void> {
+		loading = true;
+		errorMessage = '';
+
+		try {
+			const response = await fetch('/api/deep-dive', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					title: title.trim() || null,
+					suggest,
+					process_mode: processMode,
+					dry_run: dryRun
+				})
+			});
+
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'Request failed');
+			}
+
+			runStatus = payload.status;
+			diagnosticsPath = payload.diagnostics_path;
+			resultMarkdown = payload.markdown;
+		} catch (error) {
+			errorMessage = String(error);
+		} finally {
+			loading = false;
+		}
+	}
 </script>
 
 <main class="relative overflow-hidden px-5 py-10 md:px-10 md:py-14">
@@ -23,6 +75,10 @@
 				This frontend is bootstrapped with SvelteKit + Tailwind and composed with shadcn-svelte,
 				Bits UI primitives, and Skeleton styling for fast iteration with polish.
 			</p>
+			<div class="inline-flex w-fit items-center gap-2 rounded-full border border-black/10 bg-white/80 px-3 py-1 text-sm">
+				<span class="h-2 w-2 rounded-full {backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}"></span>
+				Backend: {backendStatus}
+			</div>
 			<div class="flex flex-wrap gap-3">
 				<Button class="preset-filled-primary-500 border-0">Start a Deep Dive</Button>
 				<Button variant="outline">Browse Saved Artifacts</Button>
@@ -40,11 +96,11 @@
 								<span>{area.label}</span>
 								<span class="font-semibold">{area.score}</span>
 							</div>
-							<Progress.Root value={Number.parseInt(area.score)} max={100} class="space-y-1">
+							<Progress value={Number.parseInt(area.score)} max={100} class="space-y-1">
 								<Progress.Track class="h-2 rounded-full bg-black/10">
 									<Progress.Range class="preset-filled-primary-500 h-full rounded-full" />
 								</Progress.Track>
-							</Progress.Root>
+							</Progress>
 						</div>
 					{/each}
 				</Card.Content>
@@ -84,6 +140,67 @@
 			<div class="rounded-2xl border border-dashed border-black/10 p-4 text-sm text-muted-foreground">
 				Next: connect this shell to your Python backend endpoints and stream generated artifacts directly.
 			</div>
+		</section>
+
+		<section class="space-y-5 rounded-3xl border border-black/5 bg-white/80 p-6 shadow-lg backdrop-blur md:p-8 lg:col-span-2">
+			<h2 class="text-3xl font-bold">Run Deep Dive</h2>
+			<p class="text-sm text-muted-foreground">This form is fully wired to your backend via SvelteKit server routes.</p>
+
+			<div class="grid gap-4 md:grid-cols-2">
+				<label class="space-y-2 text-sm">
+					<span class="font-medium">Film title</span>
+					<input
+						class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
+						bind:value={title}
+						placeholder="e.g., The Red Shoes"
+					/>
+				</label>
+
+				<label class="space-y-2 text-sm">
+					<span class="font-medium">Process mode</span>
+					<select
+						class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
+						bind:value={processMode}
+					>
+						<option value="hierarchical">hierarchical</option>
+						<option value="sequential">sequential</option>
+					</select>
+				</label>
+			</div>
+
+			<div class="flex flex-wrap items-center gap-4 text-sm">
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" bind:checked={dryRun} />
+					Dry run
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" bind:checked={suggest} />
+					Suggest mode
+				</label>
+			</div>
+
+			<Button class="preset-filled-primary-500 border-0" onclick={runDeepDive} disabled={loading}>
+				{loading ? 'Generating...' : 'Generate'}
+			</Button>
+
+			{#if errorMessage}
+				<div class="preset-filled-error-500 rounded-xl px-4 py-3 text-sm">{errorMessage}</div>
+			{/if}
+
+			{#if runStatus}
+				<div class="grid gap-4 md:grid-cols-2">
+					<div class="rounded-xl border border-black/10 bg-white p-4 text-sm">
+						<div><span class="font-semibold">Status:</span> {runStatus}</div>
+						<div class="mt-1"><span class="font-semibold">Diagnostics:</span> {diagnosticsPath}</div>
+					</div>
+				</div>
+			{/if}
+
+			{#if resultMarkdown}
+				<div class="max-h-96 overflow-auto rounded-xl border border-black/10 bg-white p-4">
+					<pre class="text-sm whitespace-pre-wrap">{resultMarkdown}</pre>
+				</div>
+			{/if}
 		</section>
 	</div>
 </main>

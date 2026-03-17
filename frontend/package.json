@@ -31,6 +31,8 @@
 	"dependencies": {
 		"@skeletonlabs/skeleton": "^4.13.0",
 		"@skeletonlabs/skeleton-svelte": "^4.13.0",
-		"bits-ui": "^2.16.3"
+		"bits-ui": "^2.16.3",
+		"dayjs": "^1.11.20",
+		"lucide-svelte": "^0.577.0"
 	}
 }

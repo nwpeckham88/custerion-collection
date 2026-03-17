@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
 import re
+import urllib.request
+import wave
+from array import array
 from pathlib import Path
 from threading import Lock
 
@@ -14,14 +15,6 @@ from custerion_collection.storage import latest_json_artifact_for_slug, latest_m
 
 _TTS_LOCK = Lock()
 _TTS_ENGINE = None
-_TTS_MODEL = ""
-
-
-def _tts_backend() -> str:
-    raw = os.getenv("TTS_BACKEND", "edge").strip().lower()
-    if raw not in {"edge", "coqui"}:
-        return "edge"
-    return raw
 
 
 def _tts_enabled() -> bool:
@@ -34,15 +27,8 @@ def _ensure_tts_enabled() -> None:
         raise RuntimeError("TTS is disabled. Set ENABLE_TTS=1 and install optional dependencies to enable it.")
 
 
-def _tts_model_name() -> str:
-    return os.getenv("TTS_MODEL_NAME", "tts_models/en/vctk/vits").strip()
-
-
 def tts_runtime_label() -> str:
-    backend = _tts_backend()
-    if backend == "coqui":
-        return _tts_model_name()
-    return "edge-tts"
+    return "kokoro-onnx"
 
 
 def _tts_cache_dir() -> Path:
@@ -55,6 +41,21 @@ def _tts_cache_dir() -> Path:
     return target
 
 
+def _kokoro_model_path() -> Path:
+    return _tts_cache_dir() / "kokoro-v1.0.onnx"
+
+
+def _kokoro_voices_path() -> Path:
+    return _tts_cache_dir() / "voices-v1.0.bin"
+
+
+def _download_if_missing(target: Path, url: str) -> None:
+    if target.exists():
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    urllib.request.urlretrieve(url, str(target))
+
+
 def _tts_audio_dir() -> Path:
     target = (data_dir() / "artifacts" / "tts").resolve()
     target.mkdir(parents=True, exist_ok=True)
@@ -62,29 +63,35 @@ def _tts_audio_dir() -> Path:
 
 
 def _load_tts_engine():
-    global _TTS_ENGINE, _TTS_MODEL
+    global _TTS_ENGINE
 
     _ensure_tts_enabled()
-
-    if _tts_backend() != "coqui":
-        raise RuntimeError("Coqui engine requested while TTS_BACKEND is not set to 'coqui'.")
-
-    model = _tts_model_name()
     with _TTS_LOCK:
-        if _TTS_ENGINE is not None and _TTS_MODEL == model:
+        if _TTS_ENGINE is not None:
             return _TTS_ENGINE
 
-        os.environ.setdefault("TTS_HOME", str(_tts_cache_dir()))
-
         try:
-            from TTS.api import TTS  # type: ignore
+            from kokoro_onnx import Kokoro  # type: ignore
         except Exception as exc:  # pragma: no cover - runtime dependency guard
             raise RuntimeError(
-                "Local TTS runtime is unavailable. Install Coqui TTS with 'pip install TTS'."
+                "Kokoro TTS runtime is unavailable. Install optional dependencies with 'pip install -e .[tts]'."
             ) from exc
 
-        _TTS_ENGINE = TTS(model_name=model, progress_bar=False, gpu=False)
-        _TTS_MODEL = model
+        model_url = os.getenv(
+            "KOKORO_MODEL_URL",
+            "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+        ).strip()
+        voices_url = os.getenv(
+            "KOKORO_VOICES_URL",
+            "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+        ).strip()
+
+        model_path = _kokoro_model_path()
+        voices_path = _kokoro_voices_path()
+        _download_if_missing(model_path, model_url)
+        _download_if_missing(voices_path, voices_url)
+
+        _TTS_ENGINE = Kokoro(str(model_path), str(voices_path))
         return _TTS_ENGINE
 
 
@@ -167,70 +174,46 @@ def _artifact_summary_to_tts_text(slug: str) -> str | None:
     return cleaned or None
 
 
-def _voice_choices(engine) -> list[str]:
-    speakers = getattr(engine, "speakers", None)
-    if isinstance(speakers, list) and speakers:
-        return [str(item) for item in speakers if str(item).strip()]
-    return ["default"]
+def _voice_choices() -> list[str]:
+    raw = os.getenv("TTS_ENGLISH_VOICES", "").strip()
+    if raw:
+        voices = [item.strip() for item in raw.split(",") if item.strip()]
+        if voices:
+            return voices
+    return [os.getenv("TTS_DEFAULT_VOICE", "af_sarah").strip() or "af_sarah"]
 
 
-def _run_async(coro):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    # If we're already inside an event loop, execute in a worker thread.
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(lambda: asyncio.run(coro))
-        return future.result()
+def _lang_code() -> str:
+    return "en-us"
 
 
-def _edge_voice_choices() -> list[str]:
-    try:
-        import edge_tts  # type: ignore
-    except Exception as exc:  # pragma: no cover - runtime dependency guard
-        raise RuntimeError(
-            "Edge TTS runtime is unavailable. Install optional dependencies with 'pip install -e .[tts]'."
-        ) from exc
+def _write_wav(path: Path, samples, sample_rate: int) -> None:
+    values = samples.tolist() if hasattr(samples, "tolist") else list(samples)
+    frames = array("h")
+    for sample in values:
+        scalar = float(sample)
+        if scalar > 1.0:
+            scalar = 1.0
+        if scalar < -1.0:
+            scalar = -1.0
+        frames.append(int(scalar * 32767.0))
 
-    voices = _run_async(edge_tts.list_voices())
-    english: list[str] = []
-    for voice in voices:
-        if not isinstance(voice, dict):
-            continue
-        locale = str(voice.get("Locale") or "").lower()
-        short_name = str(voice.get("ShortName") or "").strip()
-        if not short_name:
-            continue
-        if locale.startswith("en-"):
-            english.append(short_name)
-
-    if not english:
-        raise RuntimeError("No English Edge TTS voices were found.")
-
-    return sorted(set(english))
+    with wave.open(str(path), "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(int(sample_rate))
+        wav_file.writeframes(frames.tobytes())
 
 
 def list_tts_voices_for_slug(slug: str) -> tuple[str, list[str]]:
     _ = slug
     _ensure_tts_enabled()
-    backend = _tts_backend()
-    if backend == "coqui":
-        engine = _load_tts_engine()
-        voices = _voice_choices(engine)
-    else:
-        voices = _edge_voice_choices()
+    _ = _load_tts_engine()
+    voices = _voice_choices()
 
     default_voice = os.getenv("TTS_DEFAULT_VOICE", "").strip()
     if default_voice and default_voice in voices:
         return default_voice, voices
-
-    if backend == "edge":
-        preferred = "en-US-AriaNeural"
-        if preferred in voices:
-            return preferred, voices
-
     return voices[0], voices
 
 
@@ -255,41 +238,20 @@ def synthesize_tts_audio_for_slug(
     else:
         text = _markdown_to_tts_text(markdown=markdown, title=title)
 
-    backend = _tts_backend()
-    if backend == "coqui":
-        engine = _load_tts_engine()
-        voices = _voice_choices(engine)
-    else:
-        voices = _edge_voice_choices()
+    engine = _load_tts_engine()
+    voices = _voice_choices()
 
     selected_voice = voice or voices[0]
     if selected_voice not in voices:
         raise ValueError(f"Unknown TTS voice: {selected_voice}")
 
-    key = f"{tts_runtime_label()}::{normalized_mode}::{selected_voice}::{text}".encode("utf-8")
+    key = f"{tts_runtime_label()}::{normalized_mode}::{selected_voice}::{_lang_code()}::{text}".encode("utf-8")
     digest = hashlib.sha256(key).hexdigest()[:16]
-    extension = ".wav" if backend == "coqui" else ".mp3"
-    target = _tts_audio_dir() / f"{slug}-{_sanitize_voice(selected_voice)}-{digest}{extension}"
+    target = _tts_audio_dir() / f"{slug}-{_sanitize_voice(selected_voice)}-{digest}.wav"
     if target.exists():
         return target
 
-    if backend == "coqui":
-        kwargs: dict[str, object] = {
-            "text": text,
-            "file_path": str(target),
-        }
-        if selected_voice != "default":
-            kwargs["speaker"] = selected_voice
-        engine.tts_to_file(**kwargs)
-    else:
-        try:
-            import edge_tts  # type: ignore
-        except Exception as exc:  # pragma: no cover - runtime dependency guard
-            raise RuntimeError(
-                "Edge TTS runtime is unavailable. Install optional dependencies with 'pip install -e .[tts]'."
-            ) from exc
-
-        communicate = edge_tts.Communicate(text=text, voice=selected_voice)
-        _run_async(communicate.save(str(target)))
+    samples, sample_rate = engine.create(text, voice=selected_voice, speed=1.0, lang=_lang_code())
+    _write_wav(target, samples=samples, sample_rate=int(sample_rate))
 
     return target

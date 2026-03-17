@@ -19,10 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 tts = [
-  "edge-tts>=6.1.12",
-]
-tts-coqui = [
-  "TTS>=0.22.0",
+  "kokoro-onnx>=0.5.0",
 ]
 
 [project.scripts]

@@ -4,13 +4,15 @@ services:
       context: .
       dockerfile: Dockerfile.backend
       args:
-        INSTALL_TTS: "0"
+        INSTALL_TTS: "1"
     env_file:
       - .env
     environment:
       DATA_DIR: /app/data
       FRONTEND_ORIGIN: http://localhost:4173
-      ENABLE_TTS: "0"
+      ENABLE_TTS: "1"
+      TTS_DEFAULT_VOICE: af_sarah
+      TTS_ENGLISH_VOICES: af_sarah,af_heart
     volumes:
       - ./data:/app/data
     ports:

@@ -2,7 +2,6 @@
 	import { onMount, tick } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import * as Card from '$lib/components/ui/card';
 
 	type ArtifactSummary = {
 		title: string;
@@ -13,22 +12,7 @@
 		updated_at: string;
 	};
 
-	const introFlow = [
-		{
-			title: 'Configure Your Run',
-			description: 'Pick a title, choose process mode, and decide whether to use dry-run or suggestion mode.'
-		},
-		{
-			title: 'Generate and Monitor',
-			description:
-				'Start a run and follow live status updates including stage, progress, warnings, and diagnostics output.'
-		},
-		{
-			title: 'Review Artifacts',
-			description:
-				'Browse saved markdown, JSON, and HTML reports, then open formatted deep-dives from the artifact list.'
-		}
-	] as const;
+	type ThemeMode = 'light' | 'dark';
 
 	let title = $state('The Red Shoes');
 	let dryRun = $state(false);
@@ -51,8 +35,28 @@
 	let artifactsError = $state('');
 	let regeneratingSlug = $state('');
 	let artifactRegenerateErrors = $state<Record<string, string>>({});
-	let showIntroFlow = $state(true);
-	let currentIntroStep = $state(0);
+	let themeMode = $state<ThemeMode>('light');
+
+	function applyTheme(mode: ThemeMode): void {
+		themeMode = mode;
+		document.documentElement.classList.toggle('dark', mode === 'dark');
+		localStorage.setItem('custerion-theme', mode);
+	}
+
+	function syncThemeFromSystem(): void {
+		const stored = localStorage.getItem('custerion-theme');
+		if (stored === 'light' || stored === 'dark') {
+			applyTheme(stored);
+			return;
+		}
+
+		const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+		applyTheme(prefersDark ? 'dark' : 'light');
+	}
+
+	function toggleTheme(): void {
+		applyTheme(themeMode === 'dark' ? 'light' : 'dark');
+	}
 
 	async function scrollRunEventsToBottom(): Promise<void> {
 		if (!runEventsPanel || runEvents.length === 0) {
@@ -69,6 +73,8 @@
 	});
 
 	onMount(async () => {
+		syncThemeFromSystem();
+
 		try {
 			const response = await fetch('/api/health');
 			backendStatus = response.ok ? 'online' : `unhealthy (${response.status})`;
@@ -78,23 +84,6 @@
 
 		await loadArtifacts();
 	});
-
-	function jumpTo(id: string): void {
-		document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-	}
-
-	function nextIntroStep(): void {
-		currentIntroStep = Math.min(introFlow.length - 1, currentIntroStep + 1);
-	}
-
-	function previousIntroStep(): void {
-		currentIntroStep = Math.max(0, currentIntroStep - 1);
-	}
-
-	function finishIntroFlow(): void {
-		showIntroFlow = false;
-		jumpTo('run-deep-dive');
-	}
 
 	async function loadArtifacts(): Promise<void> {
 		artifactsLoading = true;
@@ -229,318 +218,606 @@
 	}
 </script>
 
-<main class="relative overflow-hidden px-5 py-8 md:px-10 md:py-12">
-	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-		<section class="hero-shell rounded-3xl border border-black/10 p-6 shadow-xl md:p-10">
-			<div class="flex flex-wrap items-start justify-between gap-4">
-				<Badge class="border-0 bg-black text-white">Custerion Collection</Badge>
-				<div class="inline-flex h-fit items-center gap-2 rounded-full border border-black/10 bg-white/85 px-3 py-1 text-sm">
-					<span class="h-2 w-2 rounded-full {backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}"></span>
-					Backend: {backendStatus}
-				</div>
+<main class="page-shell">
+	<div class="ambient-glow" aria-hidden="true"></div>
+	<div class="main-grid">
+		<header class="topbar reveal-1">
+			<div class="brand-row">
+				<Badge class="brand-badge" variant="outline">Custerion Collection</Badge>
+				<span class="brand-subtitle">Cinematic analysis engine</span>
 			</div>
-
-			<div class="mt-5 grid gap-5 md:grid-cols-[1.25fr_0.75fr] md:items-end">
-				<div class="space-y-4">
-					<h1 class="max-w-3xl text-4xl font-bold leading-tight text-balance md:text-6xl">
-						From one title to a cinematic deep-dive.
-					</h1>
-					<p class="max-w-xl text-base text-black/75 md:text-lg">
-						Run the crew, watch the agent conversation, open the finished report.
-					</p>
-					<div class="flex flex-wrap gap-2">
-						<Button class="border-0 bg-black text-white hover:bg-black/90" onclick={() => jumpTo('run-deep-dive')}
-							>Start a Run</Button
-						>
-						<Button variant="outline" onclick={() => (showIntroFlow = true)}>Open Intro Flow</Button>
-					</div>
+			<div class="topbar-actions">
+				<div class="service-pill {backendStatus === 'online' ? 'service-pill-up' : 'service-pill-down'}">
+					<span class="status-dot"></span>
+					Backend {backendStatus}
 				</div>
+				<Button variant="outline" size="sm" class="theme-toggle" onclick={toggleTheme}>
+					{themeMode === 'dark' ? 'Light Mode' : 'Dark Mode'}
+				</Button>
+			</div>
+		</header>
 
-				<div class="hero-metrics grid gap-2 rounded-2xl border border-black/10 bg-white/70 p-3 text-sm backdrop-blur">
-					<div class="metric-row">
-						<span>Mode</span>
-						<strong>{processMode}</strong>
-					</div>
-					<div class="metric-row">
-						<span>Dry run</span>
-						<strong>{dryRun ? 'On' : 'Off'}</strong>
-					</div>
-					<div class="metric-row">
-						<span>Artifacts</span>
-						<strong>{artifacts.length}</strong>
-					</div>
+		<section class="hero reveal-2">
+			<div class="hero-left">
+				<h1>Generate rich film deep-dives from a single title.</h1>
+				<p>
+					Custerion runs a multi-agent analysis, tracks progress in real time, and stores polished markdown, JSON, and HTML artifacts for later review.
+				</p>
+			</div>
+			<div class="hero-right">
+				<div class="hero-stat">
+					<span>Workflow</span>
+					<strong>Start run -> Monitor -> Open report</strong>
+				</div>
+				<div class="hero-stat">
+					<span>Artifacts loaded</span>
+					<strong>{artifacts.length}</strong>
+				</div>
+				<div class="hero-stat">
+					<span>Process mode</span>
+					<strong>{processMode}</strong>
 				</div>
 			</div>
 		</section>
 
-		<section id="run-deep-dive" class="space-y-5 rounded-3xl border border-black/5 bg-white/85 p-6 shadow-lg backdrop-blur md:p-8">
-			<h2 class="text-3xl font-bold">Run Deep Dive</h2>
-			<p class="text-sm text-muted-foreground">
-				Step-by-step: choose title and mode, click Generate, then check status and saved artifacts.
-			</p>
-
-			<div class="grid gap-4 md:grid-cols-2">
-				<label class="space-y-2 text-sm">
-					<span class="font-medium">Film title</span>
-					<input
-						class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
-						bind:value={title}
-						placeholder="e.g., The Red Shoes"
-					/>
-				</label>
-
-				<label class="space-y-2 text-sm">
-					<span class="font-medium">Process mode</span>
-					<select
-						class="w-full rounded-xl border border-black/10 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-primary"
-						bind:value={processMode}
-					>
-						<option value="hierarchical">hierarchical</option>
-						<option value="sequential">sequential</option>
-					</select>
-				</label>
-			</div>
-
-			<div class="flex flex-wrap items-center gap-4 text-sm">
-				<label class="inline-flex items-center gap-2">
-					<input type="checkbox" bind:checked={dryRun} />
-					Dry run (fast smoke output)
-				</label>
-				<label class="inline-flex items-center gap-2">
-					<input type="checkbox" bind:checked={suggest} />
-					Suggest mode (no title required)
-				</label>
-			</div>
-
-			<div class="flex flex-wrap gap-3">
-				<Button class="preset-filled-primary-500 border-0" onclick={runDeepDive} disabled={loading}>
-					{loading ? 'Running...' : 'Generate'}
-				</Button>
-				<Button
-					variant="outline"
-					onclick={async () => {
-						await loadArtifacts();
-						jumpTo('saved-artifacts');
-					}}
-				>
-					Refresh Artifact List
-				</Button>
-			</div>
-
-			{#if errorMessage}
-				<div class="preset-filled-error-500 rounded-xl px-4 py-3 text-sm">{errorMessage}</div>
-			{/if}
-
-			{#if runStatus}
-				<div class="rounded-xl border border-black/10 bg-white p-4 text-sm">
-					{#if runId}
-						<div><span class="font-semibold">Run ID:</span> <code>{runId}</code></div>
-					{/if}
-					<div><span class="font-semibold">Status:</span> {runStatus}</div>
-					{#if runStage}
-						<div class="mt-1"><span class="font-semibold">Stage:</span> {runStage}</div>
-					{/if}
-					<div class="mt-1"><span class="font-semibold">Progress:</span> {runProgress}%</div>
-					<div class="mt-1"><span class="font-semibold">Diagnostics:</span> {diagnosticsPath}</div>
-					{#if runEvents.length > 0}
-						<div class="mt-3">
-							<div class="font-semibold">Agent Conversation</div>
-							<div
-								class="mt-2 max-h-56 overflow-auto rounded-lg border border-black/10 bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed"
-								bind:this={runEventsPanel}
-							>
-								{#each runEvents as event}
-									<div>{event}</div>
-								{/each}
-							</div>
-						</div>
-					{/if}
+		<div class="content-grid">
+			<section class="panel control-panel reveal-3">
+				<div class="panel-header">
+					<h2>Run a Deep Dive</h2>
+					<p>Set your title and run options, then generate.</p>
 				</div>
-			{/if}
 
-			{#if runWarnings.length > 0}
-				<div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-					<div class="font-semibold">Warnings</div>
-					<ul class="mt-2 list-disc space-y-1 pl-5">
-						{#each runWarnings as warning}
-							<li>{warning}</li>
-						{/each}
-					</ul>
+				<div class="form-grid">
+					<label class="field">
+						<span>Film title</span>
+						<input bind:value={title} placeholder="e.g., The Red Shoes" />
+					</label>
+
+					<label class="field">
+						<span>Process mode</span>
+						<select bind:value={processMode}>
+							<option value="hierarchical">hierarchical</option>
+							<option value="sequential">sequential</option>
+						</select>
+					</label>
 				</div>
-			{/if}
 
-			{#if resultMarkdown}
-				<div class="max-h-96 overflow-auto rounded-xl border border-black/10 bg-white p-4">
-					<pre class="text-sm whitespace-pre-wrap">{resultMarkdown}</pre>
+				<div class="switches">
+					<label><input type="checkbox" bind:checked={dryRun} /> Dry run for smoke testing</label>
+					<label><input type="checkbox" bind:checked={suggest} /> Suggest mode (title optional)</label>
 				</div>
-			{/if}
 
-			<div id="saved-artifacts" class="space-y-3 rounded-xl border border-black/10 bg-white p-4">
-				<div class="flex items-center justify-between">
-					<h3 class="text-lg font-semibold">Saved Artifacts</h3>
+				<div class="actions">
+					<Button class="run-button" onclick={runDeepDive} disabled={loading}>
+						{loading ? 'Running analysis...' : 'Generate Deep Dive'}
+					</Button>
 					<Button variant="outline" onclick={loadArtifacts} disabled={artifactsLoading}>
-						{artifactsLoading ? 'Refreshing...' : 'Refresh'}
+						{artifactsLoading ? 'Refreshing...' : 'Refresh Artifacts'}
 					</Button>
 				</div>
 
+				{#if errorMessage}
+					<div class="message error">{errorMessage}</div>
+				{/if}
+
+				{#if runStatus}
+					<div class="message status">
+						<div><strong>Status:</strong> {runStatus}</div>
+						{#if runId}
+							<div><strong>Run ID:</strong> <code>{runId}</code></div>
+						{/if}
+						{#if runStage}
+							<div><strong>Stage:</strong> {runStage}</div>
+						{/if}
+						<div><strong>Progress:</strong> {runProgress}%</div>
+						<div><strong>Diagnostics:</strong> {diagnosticsPath || 'pending...'}</div>
+						<div class="progress-track" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow={runProgress}>
+							<div class="progress-fill" style={`width: ${runProgress}%`}></div>
+						</div>
+					</div>
+				{/if}
+
+				{#if runEvents.length > 0}
+					<div class="events-shell">
+						<div class="events-title">Agent conversation</div>
+						<div class="events-log" bind:this={runEventsPanel}>
+							{#each runEvents as event}
+								<div>{event}</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if runWarnings.length > 0}
+					<div class="message warning">
+						<strong>Warnings</strong>
+						<ul>
+							{#each runWarnings as warning}
+								<li>{warning}</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+			</section>
+
+			<section class="panel artifacts-panel reveal-4">
+				<div class="panel-header">
+					<h2>Recent Artifacts</h2>
+					<p>Open HTML reports or guided commentary from saved runs.</p>
+				</div>
+
 				{#if artifactsError}
-					<div class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">{artifactsError}</div>
+					<div class="message error">{artifactsError}</div>
 				{:else if artifacts.length === 0}
-					<div class="text-sm text-muted-foreground">No artifacts yet. Run a deep dive to generate one.</div>
+					<div class="empty-state">No artifacts yet. Run your first deep dive to populate this list.</div>
 				{:else}
-					<ul class="space-y-2 text-sm">
+					<ul class="artifact-list">
 						{#each artifacts as artifact}
-							<li class="rounded-lg border border-black/10 px-3 py-2 md:px-4 md:py-3">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<div class="font-medium">{artifact.title}</div>
-									<div class="text-xs text-muted-foreground">{artifact.updated_at}</div>
+							<li>
+								<div class="artifact-head">
+									<strong>{artifact.title}</strong>
+									<span>{artifact.updated_at}</span>
 								</div>
-								{#if artifact.markdown_path}
-									<div class="mt-1 text-xs break-all">Markdown: <code>{artifact.markdown_path}</code></div>
-								{/if}
-								{#if artifact.artifact_json_path}
-									<div class="text-xs break-all">JSON: <code>{artifact.artifact_json_path}</code></div>
-								{/if}
-								{#if artifact.html_path}
-									<div class="mt-2 text-xs">
-										<a
-											href={`/api/artifacts/${artifact.slug}/html`}
-											target="_blank"
-											rel="noopener noreferrer"
-											class="underline decoration-dotted underline-offset-2"
-										>
-											Open formatted report
-										</a>
-									</div>
-								{/if}
-								<div class="mt-2 flex flex-wrap items-center gap-2">
-									<a
-										href={`/artifacts/${artifact.slug}/commentary`}
-										class="inline-flex items-center rounded-md border border-black/15 px-2 py-1 text-xs font-medium hover:bg-black/5"
-									>
-										Open Guided Commentary
-									</a>
+								<div class="artifact-links">
+									{#if artifact.html_path}
+										<a href={`/api/artifacts/${artifact.slug}/html`} target="_blank" rel="noopener noreferrer">Open HTML report</a>
+									{/if}
+									<a href={`/artifacts/${artifact.slug}/commentary`}>Open guided commentary</a>
+								</div>
+								<div class="artifact-actions">
 									<Button
 										variant="outline"
 										size="sm"
 										onclick={() => regenerateArtifactHtml(artifact.slug)}
 										disabled={regeneratingSlug === artifact.slug}
 									>
-										{#if regeneratingSlug === artifact.slug}
-											Regenerating...
-										{:else if artifactRegenerateErrors[artifact.slug]}
-											Retry Regenerate
-										{:else}
-											Regenerate HTML
-										{/if}
+										{regeneratingSlug === artifact.slug ? 'Regenerating...' : 'Regenerate HTML'}
 									</Button>
 								</div>
 								{#if artifactRegenerateErrors[artifact.slug]}
-									<div class="mt-1 text-xs text-red-700 break-all">{artifactRegenerateErrors[artifact.slug]}</div>
+									<div class="artifact-error">{artifactRegenerateErrors[artifact.slug]}</div>
 								{/if}
 							</li>
 						{/each}
 					</ul>
 				{/if}
-			</div>
-		</section>
-	</div>
-
-	{#if showIntroFlow}
-		<div class="intro-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
-			<div class="intro-atmosphere absolute inset-0" aria-hidden="true"></div>
-			<Card.Root class="intro-modal relative w-full max-w-2xl border-0 shadow-2xl">
-				<Card.Header class="space-y-3">
-					<div class="flex items-center justify-between gap-3">
-						<Badge class="border-0 bg-black text-white">Intro Flow</Badge>
-						<div class="text-xs text-muted-foreground">Step {currentIntroStep + 1} of {introFlow.length}</div>
-					</div>
-					<Card.Title class="text-3xl leading-tight tracking-tight md:text-4xl">{introFlow[currentIntroStep].title}</Card.Title>
-					<Card.Description class="text-sm md:text-base">
-						{introFlow[currentIntroStep].description}
-					</Card.Description>
-				</Card.Header>
-				<Card.Content class="space-y-5">
-					<div class="h-2 w-full overflow-hidden rounded-full bg-black/10">
-						<div
-							class="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 transition-all duration-500"
-							style={`width: ${((currentIntroStep + 1) / introFlow.length) * 100}%`}
-						></div>
-					</div>
-
-					<div class="rounded-xl border border-black/10 bg-white/70 p-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
-						Guided onboarding to get you from setup to your first deep-dive artifact.
-					</div>
-
-					<div class="flex flex-wrap justify-between gap-2">
-						<Button variant="ghost" class="text-black/70 hover:text-black" onclick={() => (showIntroFlow = false)}
-							>Skip Intro</Button
-						>
-						<div class="flex gap-2">
-							<Button variant="outline" class="border-black/20" onclick={previousIntroStep} disabled={currentIntroStep === 0}
-								>Back</Button
-							>
-							{#if currentIntroStep < introFlow.length - 1}
-								<Button class="border-0 bg-black text-white hover:bg-black/90" onclick={nextIntroStep}>Next</Button>
-							{:else}
-								<Button class="border-0 bg-emerald-700 text-white hover:bg-emerald-800" onclick={finishIntroFlow}
-									>Start Exploring</Button
-								>
-							{/if}
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
+			</section>
 		</div>
-	{/if}
+
+		{#if resultMarkdown}
+			<section class="panel markdown-panel reveal-4">
+				<div class="panel-header">
+					<h2>Latest Markdown Output</h2>
+					<p>Raw output from the most recent completed run.</p>
+				</div>
+				<pre>{resultMarkdown}</pre>
+			</section>
+		{/if}
+	</div>
 </main>
 
 <style>
-	.hero-shell {
-		background:
-			radial-gradient(circle at 8% 12%, rgba(255, 198, 116, 0.35), transparent 42%),
-			radial-gradient(circle at 92% 20%, rgba(220, 90, 66, 0.24), transparent 38%),
-			linear-gradient(158deg, rgba(255, 255, 255, 0.92), rgba(247, 241, 232, 0.9));
-		backdrop-filter: blur(8px);
+	.page-shell {
+		position: relative;
+		min-height: 100vh;
+		padding: 1.25rem;
 	}
 
-	.metric-row {
+	.ambient-glow {
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		background:
+			radial-gradient(circle at 9% 14%, color-mix(in oklch, var(--accent-brand) 24%, transparent), transparent 38%),
+			radial-gradient(circle at 90% 8%, color-mix(in oklch, var(--accent-warm) 22%, transparent), transparent 36%);
+	}
+
+	.main-grid {
+		position: relative;
+		z-index: 1;
+		max-width: 1220px;
+		margin: 0 auto;
+		display: grid;
+		gap: 1rem;
+	}
+
+	.topbar,
+	.hero,
+	.panel {
+		border: 1px solid var(--panel-border);
+		background: var(--panel-bg);
+		backdrop-filter: blur(20px);
+		border-radius: 1.25rem;
+		box-shadow: var(--panel-shadow);
+	}
+
+	.topbar {
 		display: flex;
 		justify-content: space-between;
-		gap: 12px;
-		padding: 6px 4px;
-		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+		align-items: center;
+		gap: 1rem;
+		padding: 0.9rem 1rem;
 	}
 
-	.metric-row:last-child {
-		border-bottom: 0;
+	.brand-row {
+		display: flex;
+		align-items: center;
+		gap: 0.65rem;
+		flex-wrap: wrap;
 	}
 
-	.intro-overlay {
-		background: color-mix(in oklch, black 45%, transparent);
-		backdrop-filter: blur(6px);
+	.brand-badge {
+		border-color: var(--accent-brand);
+		color: var(--text-strong);
+		background: color-mix(in oklch, var(--accent-brand) 16%, transparent);
 	}
 
-	.intro-atmosphere {
-		background:
-			radial-gradient(circle at 14% 20%, rgba(255, 190, 92, 0.28), transparent 44%),
-			radial-gradient(circle at 82% 16%, rgba(212, 67, 41, 0.24), transparent 42%),
-			radial-gradient(circle at 50% 92%, rgba(42, 53, 72, 0.24), transparent 48%);
+	.brand-subtitle {
+		font-size: 0.86rem;
+		color: var(--text-muted);
 	}
 
-	.intro-modal {
-		background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(249, 245, 236, 0.96));
-		animation: intro-rise 220ms ease-out;
+	.topbar-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		flex-wrap: wrap;
+		justify-content: flex-end;
 	}
 
-	@keyframes intro-rise {
-		from {
-			opacity: 0;
-			transform: translateY(10px) scale(0.985);
-		}
+	.service-pill {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		padding: 0.4rem 0.65rem;
+		font-size: 0.78rem;
+		border-radius: 999px;
+		border: 1px solid transparent;
+	}
+
+	.service-pill-up {
+		background: color-mix(in oklch, #17a34a 16%, transparent);
+		border-color: color-mix(in oklch, #17a34a 38%, transparent);
+	}
+
+	.service-pill-down {
+		background: color-mix(in oklch, #db3f4f 16%, transparent);
+		border-color: color-mix(in oklch, #db3f4f 38%, transparent);
+	}
+
+	.status-dot {
+		width: 0.52rem;
+		height: 0.52rem;
+		border-radius: 999px;
+		background: currentColor;
+	}
+
+	.theme-toggle {
+		border-radius: 999px;
+	}
+
+	.hero {
+		display: grid;
+		grid-template-columns: 1.35fr 1fr;
+		gap: 1rem;
+		padding: 1.25rem;
+	}
+
+	.hero h1 {
+		font-size: clamp(1.8rem, 3.2vw, 3.05rem);
+		line-height: 1.06;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		max-width: 18ch;
+	}
+
+	.hero p {
+		margin-top: 0.85rem;
+		font-size: 1rem;
+		line-height: 1.52;
+		max-width: 52ch;
+		color: var(--text-muted);
+	}
+
+	.hero-right {
+		display: grid;
+		gap: 0.5rem;
+	}
+
+	.hero-stat {
+		padding: 0.8rem;
+		border-radius: 0.95rem;
+		background: color-mix(in oklch, var(--panel-bg) 72%, transparent);
+		border: 1px solid var(--panel-border);
+		display: grid;
+		gap: 0.25rem;
+	}
+
+	.hero-stat span {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.07em;
+		color: var(--text-muted);
+	}
+
+	.hero-stat strong {
+		font-size: 0.95rem;
+	}
+
+	.content-grid {
+		display: grid;
+		grid-template-columns: 1.2fr 1fr;
+		gap: 1rem;
+	}
+
+	.panel {
+		padding: 1rem;
+	}
+
+	.panel-header h2 {
+		font-size: 1.2rem;
+		font-weight: 600;
+	}
+
+	.panel-header p {
+		margin-top: 0.2rem;
+		font-size: 0.9rem;
+		color: var(--text-muted);
+	}
+
+	.form-grid {
+		margin-top: 0.9rem;
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.65rem;
+	}
+
+	.field {
+		display: grid;
+		gap: 0.35rem;
+	}
+
+	.field span {
+		font-size: 0.79rem;
+		font-weight: 500;
+		color: var(--text-muted);
+	}
+
+	.field input,
+	.field select {
+		width: 100%;
+		border-radius: 0.8rem;
+		padding: 0.6rem 0.75rem;
+		border: 1px solid var(--panel-border);
+		background: var(--field-bg);
+		color: var(--text-strong);
+		outline: none;
+	}
+
+	.field input:focus,
+	.field select:focus {
+		border-color: color-mix(in oklch, var(--accent-brand) 58%, var(--panel-border));
+		box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent-brand) 18%, transparent);
+	}
+
+	.switches {
+		margin-top: 0.9rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		font-size: 0.86rem;
+		color: var(--text-muted);
+	}
+
+	.switches label {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+
+	.actions {
+		margin-top: 0.95rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.55rem;
+	}
+
+	.run-button {
+		background: linear-gradient(135deg, var(--accent-brand), color-mix(in oklch, var(--accent-brand) 45%, white));
+		color: white;
+		border: 0;
+	}
+
+	.message {
+		margin-top: 0.8rem;
+		padding: 0.68rem 0.78rem;
+		border-radius: 0.8rem;
+		font-size: 0.84rem;
+		display: grid;
+		gap: 0.3rem;
+	}
+
+	.message.error {
+		border: 1px solid color-mix(in oklch, #e11d48 38%, transparent);
+		background: color-mix(in oklch, #e11d48 14%, transparent);
+	}
+
+	.message.status {
+		border: 1px solid var(--panel-border);
+		background: color-mix(in oklch, var(--field-bg) 72%, transparent);
+	}
+
+	.progress-track {
+		height: 0.42rem;
+		border-radius: 999px;
+		background: color-mix(in oklch, var(--text-muted) 28%, transparent);
+		overflow: hidden;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background: linear-gradient(90deg, var(--accent-brand), var(--accent-warm));
+		transition: width 280ms ease;
+	}
+
+	.events-shell {
+		margin-top: 0.85rem;
+	}
+
+	.events-title {
+		font-size: 0.83rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+	}
+
+	.events-log {
+		margin-top: 0.45rem;
+		max-height: 15rem;
+		overflow: auto;
+		padding: 0.75rem;
+		border-radius: 0.82rem;
+		border: 1px solid var(--panel-border);
+		background: color-mix(in oklch, var(--field-bg) 68%, transparent);
+		font-size: 0.77rem;
+		line-height: 1.55;
+		font-family: 'IBM Plex Mono', monospace;
+	}
+
+	.message.warning {
+		border: 1px solid color-mix(in oklch, #c27b14 46%, transparent);
+		background: color-mix(in oklch, #f4b03d 18%, transparent);
+	}
+
+	.message.warning ul {
+		margin: 0.2rem 0 0;
+		padding-left: 1.1rem;
+	}
+
+	.empty-state {
+		margin-top: 0.85rem;
+		padding: 0.75rem;
+		border-radius: 0.8rem;
+		border: 1px dashed var(--panel-border);
+		font-size: 0.86rem;
+		color: var(--text-muted);
+	}
+
+	.artifact-list {
+		margin-top: 0.85rem;
+		display: grid;
+		gap: 0.62rem;
+	}
+
+	.artifact-list li {
+		padding: 0.7rem;
+		border-radius: 0.8rem;
+		border: 1px solid var(--panel-border);
+		background: color-mix(in oklch, var(--field-bg) 66%, transparent);
+	}
+
+	.artifact-head {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 0.6rem;
+	}
+
+	.artifact-head strong {
+		font-size: 0.9rem;
+	}
+
+	.artifact-head span {
+		font-size: 0.73rem;
+		color: var(--text-muted);
+	}
+
+	.artifact-links {
+		margin-top: 0.45rem;
+		display: flex;
+		gap: 0.78rem;
+		flex-wrap: wrap;
+		font-size: 0.79rem;
+	}
+
+	.artifact-links a {
+		color: var(--accent-brand);
+		text-decoration: underline;
+		text-decoration-style: dotted;
+		text-underline-offset: 0.14rem;
+	}
+
+	.artifact-actions {
+		margin-top: 0.55rem;
+	}
+
+	.artifact-error {
+		margin-top: 0.45rem;
+		font-size: 0.73rem;
+		color: #d22452;
+		word-break: break-word;
+	}
+
+	.markdown-panel pre {
+		margin-top: 0.75rem;
+		max-height: 24rem;
+		overflow: auto;
+		padding: 0.85rem;
+		border-radius: 0.85rem;
+		border: 1px solid var(--panel-border);
+		background: color-mix(in oklch, var(--field-bg) 74%, transparent);
+		font-size: 0.8rem;
+		line-height: 1.48;
+		white-space: pre-wrap;
+	}
+
+	.reveal-1,
+	.reveal-2,
+	.reveal-3,
+	.reveal-4 {
+		opacity: 0;
+		transform: translateY(10px);
+		animation: rise-in 420ms cubic-bezier(0.2, 0.72, 0.2, 1) forwards;
+	}
+
+	.reveal-2 {
+		animation-delay: 80ms;
+	}
+
+	.reveal-3 {
+		animation-delay: 150ms;
+	}
+
+	.reveal-4 {
+		animation-delay: 210ms;
+	}
+
+	@keyframes rise-in {
 		to {
 			opacity: 1;
-			transform: translateY(0) scale(1);
+			transform: translateY(0);
+		}
+	}
+
+	@media (max-width: 1024px) {
+		.hero,
+		.content-grid {
+			grid-template-columns: 1fr;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.page-shell {
+			padding: 0.85rem;
+		}
+
+		.topbar {
+			align-items: flex-start;
+			flex-direction: column;
+		}
+
+		.form-grid {
+			grid-template-columns: 1fr;
 		}
 	}
 </style>

@@ -1,0 +1,12 @@
+Loading svelte-check in workspace: /home/dietpi/Development/custerion-collection/frontend
+Getting Svelte diagnostics...
+
+/home/dietpi/Development/custerion-collection/frontend/src/routes/+page.svelte:531:2
+Warn: Unused CSS selector ".intro-modal"
+https://svelte.dev/e/css_unused_selector (svelte)
+
+	.intro-modal {
+		background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(249, 245, 236, 0.96));
+
+====================================
+svelte-check found 0 errors and 1 warning in 1 file

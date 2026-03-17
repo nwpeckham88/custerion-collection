@@ -99,7 +99,7 @@ def build_deep_dive_crew(
         expected_output=(
             "A concise plan with sections, required evidence, acceptance checks, and explicit no-speculation rules."
         ),
-        agent=manager,
+        agent=editor,
     )
 
     personalization = Task(
@@ -161,7 +161,7 @@ def build_deep_dive_crew(
     )
 
     return Crew(
-        agents=[manager, curator, historian, technical, industry, follow_up, editor],
+        agents=[curator, historian, technical, industry, follow_up, editor],
         tasks=[planning, personalization, history, craft, market, links, synthesis],
         process=_process(process_mode_override=process_mode_override),
         manager_agent=manager,

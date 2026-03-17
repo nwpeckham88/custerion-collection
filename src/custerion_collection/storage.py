@@ -126,6 +126,63 @@ def latest_html_artifact_for_slug(slug: str) -> Path | None:
     return candidates[0]
 
 
+def latest_markdown_artifact_for_slug(slug: str) -> Path | None:
+    artifacts = ensure_data_dirs()
+    candidates = sorted(
+        artifacts.glob(f"{slug}*.md"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def latest_json_artifact_for_slug(slug: str) -> Path | None:
+    artifacts = ensure_data_dirs()
+    candidates = sorted(
+        artifacts.glob(f"{slug}*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def artifact_title_for_slug(slug: str) -> str:
+    json_path = latest_json_artifact_for_slug(slug)
+    title = _extract_title_from_artifact_json(json_path)
+    if title:
+        return title
+    return _title_from_stem(slug)
+
+
+def upsert_html_artifact_for_slug(slug: str, html_content: str) -> Path:
+    artifacts = ensure_data_dirs()
+
+    candidates: list[Path] = []
+    markdown_path = latest_markdown_artifact_for_slug(slug)
+    json_path = latest_json_artifact_for_slug(slug)
+    html_path = latest_html_artifact_for_slug(slug)
+
+    if markdown_path:
+        candidates.append(markdown_path)
+    if json_path:
+        candidates.append(json_path)
+    if html_path:
+        candidates.append(html_path)
+
+    if candidates:
+        stem = max(candidates, key=lambda path: path.stat().st_mtime).stem
+    else:
+        stem = slug
+
+    target = artifacts / f"{stem}.html"
+    target.write_text(html_content, encoding="utf-8")
+    return target
+
+
 def _entry_mtime(entry: dict[str, Path | None]) -> float:
     markdown_path = entry["markdown"]
     json_path = entry["json"]

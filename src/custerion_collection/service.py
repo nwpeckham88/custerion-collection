@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 import uuid
 import re
 from contextlib import redirect_stderr, redirect_stdout
@@ -9,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import TextIOBase
 from typing import Callable
+from urllib.parse import urlparse
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
 from custerion_collection.config import html_report_model_name, model_fallback_names, model_name
@@ -46,6 +48,7 @@ MODEL_OVERRIDE_KEYS = [
 MIN_MARKDOWN_CHARS = 500
 MIN_CITATION_COVERAGE = 0.5
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+PLACEHOLDER_SOURCE_DOMAINS = {"example.com", "example.org", "example.net", "localhost"}
 
 
 def _normalize_event_line(line: str) -> str:
@@ -157,6 +160,68 @@ def _render_html_report(markdown: str, selected_title: str) -> tuple[str | None,
         return html, None
     except Exception as exc:
         return None, f"MODEL_NAME_HTML_REPORTER failed ({model}): {exc}"
+
+
+def _is_retryable_html_warning(warning: str) -> bool:
+    lowered = warning.lower()
+    return (
+        "ratelimiterror" in lowered
+        or "code\":429" in lowered
+        or "code 429" in lowered
+        or "temporarily rate-limited" in lowered
+        or "serviceunavailable" in lowered
+        or "http 503" in lowered
+    )
+
+
+def _html_retry_attempts() -> int:
+    raw = os.getenv("HTML_REPORT_RETRY_ATTEMPTS", "2").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        value = 2
+    return max(0, min(value, 5))
+
+
+def _html_retry_delay_seconds() -> float:
+    raw = os.getenv("HTML_REPORT_RETRY_DELAY_SECONDS", "1.5").strip()
+    try:
+        value = float(raw)
+    except ValueError:
+        value = 1.5
+    return max(0.0, min(value, 10.0))
+
+
+def render_html_report_with_retry(
+    *,
+    markdown: str,
+    selected_title: str,
+    event_callback: Callable[[str], None] | None = None,
+) -> tuple[str | None, str | None]:
+    attempts = _html_retry_attempts()
+    delay_seconds = _html_retry_delay_seconds()
+    total = attempts + 1
+
+    last_warning: str | None = None
+    for index in range(total):
+        html_content, warning = _render_html_report(markdown=markdown, selected_title=selected_title)
+        if warning is None:
+            if index > 0 and event_callback is not None:
+                event_callback(f"System: HTML reporter succeeded on retry {index + 1}/{total}")
+            return html_content, None
+
+        last_warning = warning
+        if not _is_retryable_html_warning(warning) or index == total - 1:
+            break
+
+        if event_callback is not None:
+            event_callback(
+                f"System: HTML reporter rate-limited, retrying ({index + 1}/{total})"
+            )
+        if delay_seconds > 0:
+            time.sleep(delay_seconds)
+
+    return None, last_warning
 
 
 def execute_deep_dive(
@@ -357,7 +422,11 @@ def execute_deep_dive(
         )
 
     try:
-        html_content, html_warning = _render_html_report(markdown=markdown, selected_title=selected_title)
+        html_content, html_warning = render_html_report_with_retry(
+            markdown=markdown,
+            selected_title=selected_title,
+            event_callback=event,
+        )
         if html_warning:
             warnings.append(html_warning)
             event(f"Warning: {html_warning}")
@@ -463,7 +532,21 @@ def _quality_issues(
             f"({coverage:.2f}; minimum {MIN_CITATION_COVERAGE:.2f})"
         )
 
+    if _contains_placeholder_source_urls(markdown):
+        issues.append("placeholder source URLs detected (for example.com/localhost style links)")
+
     return issues
+
+
+def _contains_placeholder_source_urls(markdown: str) -> bool:
+    for raw in re.findall(r"https?://[^\s)]+", markdown):
+        parsed = urlparse(raw.rstrip(".,"))
+        host = (parsed.netloc or "").lower().strip()
+        if host.startswith("www."):
+            host = host[4:]
+        if host in PLACEHOLDER_SOURCE_DOMAINS:
+            return True
+    return False
 
 
 def _dry_run_markdown(title: str, suggestion_mode: bool) -> str:
@@ -484,5 +567,5 @@ def _dry_run_markdown(title: str, suggestion_mode: bool) -> str:
         "## Known Unknowns\n"
         "- This output does not include real retrieval evidence.\n\n"
         "## Follow-Up Media\n"
-        "1. Example article: https://example.com/reference\n"
+        "1. Film context overview: https://en.wikipedia.org/wiki/Film\n"
     )

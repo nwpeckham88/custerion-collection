@@ -31,7 +31,7 @@
 	] as const;
 
 	let title = $state('The Red Shoes');
-	let dryRun = $state(true);
+	let dryRun = $state(false);
 	let suggest = $state(false);
 	let processMode = $state<'hierarchical' | 'sequential'>('hierarchical');
 	let loading = $state(false);
@@ -49,6 +49,8 @@
 	let artifacts = $state<ArtifactSummary[]>([]);
 	let artifactsLoading = $state(false);
 	let artifactsError = $state('');
+	let regeneratingSlug = $state('');
+	let artifactRegenerateErrors = $state<Record<string, string>>({});
 	let showIntroFlow = $state(true);
 	let currentIntroStep = $state(0);
 
@@ -110,6 +112,30 @@
 			artifactsError = String(error);
 		} finally {
 			artifactsLoading = false;
+		}
+	}
+
+	async function regenerateArtifactHtml(slug: string): Promise<void> {
+		regeneratingSlug = slug;
+		artifactRegenerateErrors = { ...artifactRegenerateErrors, [slug]: '' };
+
+		try {
+			const response = await fetch(`/api/artifacts/${encodeURIComponent(slug)}/html/regenerate`, {
+				method: 'POST'
+			});
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'HTML regeneration failed');
+			}
+
+			await loadArtifacts();
+		} catch (error) {
+			artifactRegenerateErrors = {
+				...artifactRegenerateErrors,
+				[slug]: String(error)
+			};
+		} finally {
+			regeneratingSlug = '';
 		}
 	}
 
@@ -386,6 +412,25 @@
 											Open formatted report
 										</a>
 									</div>
+								{/if}
+								<div class="mt-2 flex flex-wrap items-center gap-2">
+									<Button
+										variant="outline"
+										size="sm"
+										onclick={() => regenerateArtifactHtml(artifact.slug)}
+										disabled={regeneratingSlug === artifact.slug}
+									>
+										{#if regeneratingSlug === artifact.slug}
+											Regenerating...
+										{:else if artifactRegenerateErrors[artifact.slug]}
+											Retry Regenerate
+										{:else}
+											Regenerate HTML
+										{/if}
+									</Button>
+								</div>
+								{#if artifactRegenerateErrors[artifact.slug]}
+									<div class="mt-1 text-xs text-red-700 break-all">{artifactRegenerateErrors[artifact.slug]}</div>
 								{/if}
 							</li>
 						{/each}

@@ -129,6 +129,43 @@ class TestService(unittest.TestCase):
 
         self.assertIn("quality gates", str(error.exception))
 
+    @patch("custerion_collection.service.resolve_canonical_film_identity")
+    @patch("custerion_collection.crew.build_deep_dive_crew")
+    @patch("custerion_collection.service.model_fallback_names")
+    def test_execute_deep_dive_rejects_placeholder_source_urls(
+        self,
+        mock_fallbacks,
+        mock_build_crew,
+        mock_resolve_identity,
+    ) -> None:
+        mock_fallbacks.return_value = []
+        mock_resolve_identity.return_value = IdentityResolutionResult(identity=None, error=None)
+
+        crew = unittest.mock.Mock()
+        crew.kickoff.return_value = (
+            "## Personalized Intro\n"
+            "A rich and detailed perspective on the film and its legacy.\n\n"
+            "## History\n"
+            "Production context with placeholder source: https://example.com/fake\n\n"
+            "## Craft\n"
+            "Visual analysis grounded in concrete observations and style breakdown.\n\n"
+            "## Industry\n"
+            "Box-office and reception context with long-term impact framing.\n\n"
+            "## Notable Lore\n"
+            "Anecdotes and lasting influence discussion for genre history.\n"
+        )
+        mock_build_crew.return_value = crew
+
+        with self.assertRaises(ValueError) as error:
+            execute_deep_dive(
+                title="Blade Runner (1982)",
+                suggestion_mode=False,
+                process_mode_override="hierarchical",
+                dry_run=False,
+            )
+
+        self.assertIn("placeholder source URLs", str(error.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

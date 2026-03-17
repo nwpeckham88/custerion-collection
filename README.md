@@ -116,6 +116,25 @@ MODEL_NAME_HTML_REPORTER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 
 When `MODEL_NAME_HTML_REPORTER` is unset, the project writes a deterministic styled HTML report locally.
 
+## Local TTS for Generated Reports
+Generated HTML reports include an in-page TTS control panel (voice select, play, stop).
+
+- TTS is fully local using Coqui TTS (`TTS` package).
+- Default model: `tts_models/en/vctk/vits` (multi-speaker voices).
+- Model files are downloaded once and cached on disk, then reused for later pages.
+
+Optional configuration:
+
+```bash
+TTS_MODEL_NAME=tts_models/en/vctk/vits
+TTS_DEFAULT_VOICE=p225
+TTS_CACHE_DIR=./data/tts-cache
+```
+
+Notes:
+- First playback can take longer while the model is downloaded and initialized.
+- Subsequent playback reuses the cached model and cached audio when text/voice are unchanged.
+
 Use `--suggest` instead of `--title` to run suggestion mode.
 
 Suggestion mode selection order:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import logging
 from datetime import datetime, timezone
 from threading import Lock
@@ -8,11 +9,19 @@ from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from custerion_collection.service import execute_deep_dive
-from custerion_collection.storage import list_recent_artifacts, latest_html_artifact_for_slug
+from custerion_collection.service import execute_deep_dive, render_html_report_with_retry
+from custerion_collection.storage import (
+    artifact_title_for_slug,
+    list_recent_artifacts,
+    latest_html_artifact_for_slug,
+    latest_markdown_artifact_for_slug,
+    upsert_html_artifact_for_slug,
+)
+from custerion_collection.tts import list_tts_voices_for_slug, synthesize_tts_audio_for_slug
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +71,98 @@ class DeepDiveRunStatus(BaseModel):
     events: list[str] = Field(default_factory=list)
     result: DeepDiveResponse | None = None
     error: str | None = None
+
+
+class HtmlRegenerateResponse(BaseModel):
+    slug: str
+    html_path: str
+    warning: str | None = None
+
+
+class ArtifactTtsVoicesResponse(BaseModel):
+    slug: str
+    model: str
+    default_voice: str
+    voices: list[str]
+
+
+_PLACEHOLDER_URL_RE = re.compile(r"https?://(?:www\.)?(example\.com|example\.org|example\.net|localhost)(?:/[^\s\"'<>]*)?", re.IGNORECASE)
+
+
+def _strip_placeholder_source_links_from_html(html: str) -> str:
+    # Prevent placeholder citations from appearing in rendered report pages.
+    return _PLACEHOLDER_URL_RE.sub("[placeholder source removed]", html)
+
+
+def _inject_tts_controls(html: str, slug: str) -> str:
+    marker = "data-custerion-tts"
+    if marker in html:
+        return html
+
+    block = f"""
+<div data-custerion-tts style="position:fixed;right:16px;bottom:16px;z-index:9999;background:#111827;color:#f9fafb;padding:10px 12px;border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.35);font-family:system-ui,sans-serif;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:92vw;">
+    <label style="font-size:12px;opacity:.9;">Voice</label>
+    <select id="custerion-tts-voice" style="border-radius:6px;border:1px solid #374151;background:#0b1220;color:#f9fafb;padding:4px 8px;"></select>
+    <label style="font-size:12px;opacity:.9;">Read</label>
+    <select id="custerion-tts-mode" style="border-radius:6px;border:1px solid #374151;background:#0b1220;color:#f9fafb;padding:4px 8px;">
+        <option value="summary">Summary</option>
+        <option value="full" selected>Full report</option>
+    </select>
+    <button id="custerion-tts-play" style="border:0;border-radius:6px;background:#10b981;color:#052e16;padding:6px 10px;font-weight:700;cursor:pointer;">Play</button>
+    <button id="custerion-tts-stop" style="border:0;border-radius:6px;background:#ef4444;color:#fff;padding:6px 10px;font-weight:700;cursor:pointer;">Stop</button>
+    <audio id="custerion-tts-audio" preload="none"></audio>
+</div>
+<script>
+(function() {{
+    var slug = {slug!r};
+    var voiceSelect = document.getElementById('custerion-tts-voice');
+    var modeSelect = document.getElementById('custerion-tts-mode');
+    var playBtn = document.getElementById('custerion-tts-play');
+    var stopBtn = document.getElementById('custerion-tts-stop');
+    var audio = document.getElementById('custerion-tts-audio');
+    if (!voiceSelect || !modeSelect || !playBtn || !stopBtn || !audio) return;
+
+    fetch('/api/artifacts/' + encodeURIComponent(slug) + '/tts/voices')
+        .then(function(r) {{ return r.json(); }})
+        .then(function(payload) {{
+            var voices = Array.isArray(payload.voices) ? payload.voices : [];
+            var defaultVoice = payload.default_voice || voices[0] || 'default';
+            voices.forEach(function(v) {{
+                var opt = document.createElement('option');
+                opt.value = v;
+                opt.textContent = v;
+                if (v === defaultVoice) opt.selected = true;
+                voiceSelect.appendChild(opt);
+            }});
+            if (voiceSelect.options.length === 0) {{
+                var opt = document.createElement('option');
+                opt.value = 'default';
+                opt.textContent = 'default';
+                voiceSelect.appendChild(opt);
+            }}
+        }})
+        .catch(function(err) {{
+            console.error('TTS voice list failed', err);
+        }});
+
+    playBtn.addEventListener('click', function() {{
+        var voice = voiceSelect.value || 'default';
+        var mode = modeSelect.value || 'full';
+        audio.src = '/api/artifacts/' + encodeURIComponent(slug) + '/tts/audio?voice=' + encodeURIComponent(voice) + '&mode=' + encodeURIComponent(mode);
+        audio.play().catch(function(err) {{ console.error('TTS playback failed', err); }});
+    }});
+
+    stopBtn.addEventListener('click', function() {{
+        audio.pause();
+        audio.currentTime = 0;
+    }});
+}})();
+</script>
+"""
+
+    if "</body>" in html:
+        return html.replace("</body>", block + "\n</body>")
+    return html + block
 
 
 def _origins_from_env() -> list[str]:
@@ -266,4 +367,61 @@ def get_artifact_html(slug: str) -> HTMLResponse:
     html_path = latest_html_artifact_for_slug(slug)
     if html_path is None or not html_path.exists():
         raise HTTPException(status_code=404, detail=f"HTML artifact not found for slug: {slug}")
-    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+    html = html_path.read_text(encoding="utf-8")
+    html = _strip_placeholder_source_links_from_html(html)
+    html = _inject_tts_controls(html=html, slug=slug)
+    return HTMLResponse(content=html)
+
+
+@app.get("/artifacts/{slug}/tts/voices", response_model=ArtifactTtsVoicesResponse)
+def get_artifact_tts_voices(slug: str) -> ArtifactTtsVoicesResponse:
+    try:
+        default_voice, voices = list_tts_voices_for_slug(slug)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return ArtifactTtsVoicesResponse(
+        slug=slug,
+        model=os.getenv("TTS_MODEL_NAME", "tts_models/en/vctk/vits"),
+        default_voice=default_voice,
+        voices=voices,
+    )
+
+
+@app.get("/artifacts/{slug}/tts/audio")
+def get_artifact_tts_audio(
+    slug: str,
+    voice: str | None = None,
+    mode: str = "full",
+) -> FileResponse:
+    try:
+        audio_path = synthesize_tts_audio_for_slug(slug=slug, voice=voice, mode=mode)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Artifact TTS synthesis failed")
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {exc}") from exc
+
+    return FileResponse(path=str(audio_path), media_type="audio/wav", filename=audio_path.name)
+
+
+@app.post("/artifacts/{slug}/html/regenerate", response_model=HtmlRegenerateResponse)
+def regenerate_artifact_html(slug: str) -> HtmlRegenerateResponse:
+    markdown_path = latest_markdown_artifact_for_slug(slug)
+    if markdown_path is None or not markdown_path.exists():
+        raise HTTPException(status_code=404, detail=f"Markdown artifact not found for slug: {slug}")
+
+    markdown = markdown_path.read_text(encoding="utf-8")
+    title = artifact_title_for_slug(slug)
+    html_content, warning = render_html_report_with_retry(markdown=markdown, selected_title=title)
+
+    if html_content is None:
+        detail = warning or "HTML regeneration failed"
+        raise HTTPException(status_code=503, detail=detail)
+
+    html_path = upsert_html_artifact_for_slug(slug, html_content)
+    return HtmlRegenerateResponse(slug=slug, html_path=str(html_path), warning=warning)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -111,6 +113,86 @@ class TestApi(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["events"], ["System: Run queued", "Agent: researching"])
+
+    def test_regenerate_html_missing_markdown_returns_404(self) -> None:
+        response = self.client.post("/artifacts/blade-runner-20260317-190129/html/regenerate")
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("custerion_collection.api.upsert_html_artifact_for_slug")
+    @patch("custerion_collection.api.render_html_report_with_retry")
+    @patch("custerion_collection.api.artifact_title_for_slug")
+    @patch("custerion_collection.api.latest_markdown_artifact_for_slug")
+    def test_regenerate_html_success(
+        self,
+        mock_latest_markdown,
+        mock_title,
+        mock_render,
+        mock_upsert,
+    ) -> None:
+        markdown_path = Path("/tmp/blade-runner-20260317-190129.md")
+        with patch.object(Path, "exists", return_value=True), patch.object(
+            Path, "read_text", return_value="## Personalized Intro\nLong-form markdown"
+        ):
+            mock_latest_markdown.return_value = markdown_path
+            mock_title.return_value = "Blade Runner"
+            mock_render.return_value = ("<!doctype html><html><body>ok</body></html>", None)
+            mock_upsert.return_value = Path("/tmp/blade-runner-20260317-190129.html")
+
+            response = self.client.post("/artifacts/blade-runner-20260317-190129/html/regenerate")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["slug"], "blade-runner-20260317-190129")
+        self.assertEqual(payload["html_path"], "/tmp/blade-runner-20260317-190129.html")
+
+    @patch("custerion_collection.api.list_tts_voices_for_slug")
+    def test_tts_voices_success(self, mock_voices) -> None:
+        mock_voices.return_value = ("p225", ["p225", "p226"])
+
+        response = self.client.get("/artifacts/blade-runner-20260317-190129/tts/voices")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["default_voice"], "p225")
+        self.assertEqual(payload["voices"], ["p225", "p226"])
+
+    @patch("custerion_collection.api.list_tts_voices_for_slug")
+    def test_tts_voices_unavailable_returns_503(self, mock_voices) -> None:
+        mock_voices.side_effect = RuntimeError("Local TTS runtime is unavailable")
+
+        response = self.client.get("/artifacts/blade-runner-20260317-190129/tts/voices")
+
+        self.assertEqual(response.status_code, 503)
+
+    @patch("custerion_collection.api.synthesize_tts_audio_for_slug")
+    def test_tts_audio_success(self, mock_synthesize) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".wav") as tmp:
+            tmp.write(b"RIFF....WAVE")
+            tmp.flush()
+            mock_synthesize.return_value = Path(tmp.name)
+
+            response = self.client.get("/artifacts/blade-runner-20260317-190129/tts/audio")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers.get("content-type"), "audio/wav")
+            mock_synthesize.assert_called_with(
+                slug="blade-runner-20260317-190129",
+                voice=None,
+                mode="full",
+            )
+
+    @patch("custerion_collection.api.latest_html_artifact_for_slug")
+    def test_artifact_html_sanitizes_placeholder_links(self, mock_latest_html) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".html", mode="w+", encoding="utf-8") as tmp:
+            tmp.write("<html><body><a href='https://example.com/fake'>source</a></body></html>")
+            tmp.flush()
+            mock_latest_html.return_value = Path(tmp.name)
+
+            response = self.client.get("/artifacts/blade-runner/html")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn("example.com", response.text)
 
 
 if __name__ == "__main__":

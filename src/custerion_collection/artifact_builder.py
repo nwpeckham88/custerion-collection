@@ -20,6 +20,13 @@ _SECTION_KEYWORDS = {
     "lore": ["lore", "trivia", "behind"],
 }
 
+_PLACEHOLDER_SOURCE_DOMAINS = {
+    "example.com",
+    "example.org",
+    "example.net",
+    "localhost",
+}
+
 
 def build_deep_dive_artifact(
     title: str,
@@ -194,6 +201,8 @@ def _extract_follow_up_media(heading_map: dict[str, str]) -> list[FollowUpMediaI
         url = _extract_url(raw)
         if not url or url in seen_urls:
             continue
+        if _is_placeholder_source_url(url):
+            continue
         kind = _classify_media_kind(url)
         if per_kind[kind] >= 3:
             continue
@@ -227,6 +236,8 @@ def _extract_citations(markdown: str, follow_up_media: list[FollowUpMediaItem]) 
     for idx, url in enumerate(urls, start=1):
         clean = url.rstrip(".,")
         if clean in seen:
+            continue
+        if _is_placeholder_source_url(clean):
             continue
         seen.add(clean)
         parsed = urlparse(clean)
@@ -286,3 +297,11 @@ def _claim_ref_for_url(markdown: str, url: str, fallback_idx: int) -> str:
             candidate = candidate[:117].rstrip() + "..."
         return candidate
     return f"claim-{fallback_idx}"
+
+
+def _is_placeholder_source_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower().strip()
+    if host.startswith("www."):
+        host = host[4:]
+    return host in _PLACEHOLDER_SOURCE_DOMAINS

@@ -9,6 +9,7 @@
 		slug: string;
 		markdown_path: string | null;
 		artifact_json_path: string | null;
+		html_path: string | null;
 		updated_at: string;
 	};
 
@@ -283,6 +284,18 @@
 								{/if}
 								{#if artifact.artifact_json_path}
 									<div class="text-xs break-all">JSON: <code>{artifact.artifact_json_path}</code></div>
+								{/if}
+								{#if artifact.html_path}
+									<div class="mt-2 text-xs">
+										<a
+											href={`/api/artifacts/${artifact.slug}/html`}
+											target="_blank"
+											rel="noopener noreferrer"
+											class="underline decoration-dotted underline-offset-2"
+										>
+											Open formatted report
+										</a>
+									</div>
 								{/if}
 							</li>
 						{/each}

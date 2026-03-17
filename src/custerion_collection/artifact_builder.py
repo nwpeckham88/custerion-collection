@@ -111,7 +111,7 @@ def _build_core_sections(heading_map: dict[str, str], markdown: str) -> list[Dee
         sections.append(
             DeepDiveSection(
                 name=name,
-                content=text or f"Insufficient evidence available for {name.lower()} section.",
+                content=text or f"This section has limited confirmed detail in the current source set.",
                 confidence=confidence,
             )
         )

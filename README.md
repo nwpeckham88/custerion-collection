@@ -101,9 +101,18 @@ Optional multi-model routing by role:
 ```bash
 MODEL_NAME_TECHNICAL_DIRECTOR=openrouter/deepseek/deepseek-chat-v3-0324
 MODEL_NAME_SCRIPT_EDITOR=openrouter/openai/gpt-4.1
+MODEL_NAME_TRIVIA_RESEARCHER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 ```
 
 Role override key format is `MODEL_NAME_<ROLE_NAME>`, where role names are uppercase with spaces replaced by underscores.
+
+Optional dedicated model for HTML report generation:
+
+```bash
+MODEL_NAME_HTML_REPORTER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
+```
+
+When `MODEL_NAME_HTML_REPORTER` is unset, the project writes a deterministic styled HTML report locally.
 
 Use `--suggest` instead of `--title` to run suggestion mode.
 

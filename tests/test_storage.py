@@ -28,7 +28,7 @@ class TestStorage(unittest.TestCase):
             artifacts_dir = Path(tmp) / "artifacts"
             self.assertEqual(path.parent, artifacts_dir.resolve())
 
-    def test_write_artifact_bundle_creates_markdown_and_json(self) -> None:
+    def test_write_artifact_bundle_creates_markdown_json_and_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["DATA_DIR"] = tmp
             artifact = DeepDiveArtifact(
@@ -42,17 +42,21 @@ class TestStorage(unittest.TestCase):
                 created_at=datetime.now(timezone.utc),
             )
 
-            markdown_path, json_path = write_artifact_bundle(
+            markdown_path, json_path, html_path = write_artifact_bundle(
                 title="Test Film",
                 markdown="content",
                 artifact=artifact,
+                html_content=None,
             )
 
             self.assertTrue(markdown_path.exists())
             self.assertTrue(json_path.exists())
+            self.assertTrue(html_path.exists())
             self.assertEqual(markdown_path.suffix, ".md")
             self.assertEqual(json_path.suffix, ".json")
+            self.assertEqual(html_path.suffix, ".html")
             self.assertIn('"film"', json_path.read_text(encoding="utf-8"))
+            self.assertIn("<html", html_path.read_text(encoding="utf-8"))
 
     def test_write_run_diagnostics_creates_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -100,6 +104,8 @@ class TestStorage(unittest.TestCase):
             titles = {item["title"] for item in items}
             self.assertIn("The Red Shoes", titles)
             self.assertIn("Only Markdown", titles)
+            red_shoes = next(item for item in items if item["title"] == "The Red Shoes")
+            self.assertTrue(red_shoes["html_path"]) 
 
     def test_list_recent_artifacts_honors_limit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

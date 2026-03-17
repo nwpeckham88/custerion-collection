@@ -65,6 +65,8 @@ def run() -> None:
         print(f"Deep-dive markdown saved to: {result.markdown_path}")
     if result.artifact_json_path:
         print(f"Deep-dive artifact saved to: {result.artifact_json_path}")
+    if result.html_path:
+        print(f"Deep-dive HTML report saved to: {result.html_path}")
 
     for warning in result.warnings:
         print(f"Warning: {warning}")

@@ -34,6 +34,7 @@ class TestMainIntegration(unittest.TestCase):
             diagnostics_path="/tmp/diag.json",
             markdown_path="/tmp/out.md",
             artifact_json_path="/tmp/out.json",
+            html_path="/tmp/out.html",
         )
 
         run()
@@ -48,6 +49,7 @@ class TestMainIntegration(unittest.TestCase):
             [
                 call("Deep-dive markdown saved to: /tmp/out.md"),
                 call("Deep-dive artifact saved to: /tmp/out.json"),
+                call("Deep-dive HTML report saved to: /tmp/out.html"),
                 call("Warning: sample warning"),
                 call("Run diagnostics saved to: /tmp/diag.json"),
             ]
@@ -125,6 +127,7 @@ class TestMainIntegration(unittest.TestCase):
             diagnostics_path="/tmp/diag.json",
             markdown_path="/tmp/out.md",
             artifact_json_path="/tmp/out.json",
+            html_path="/tmp/out.html",
         )
 
         run()

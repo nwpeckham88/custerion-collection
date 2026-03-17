@@ -5,9 +5,10 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Callable
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
-from custerion_collection.config import model_fallback_names, model_name
+from custerion_collection.config import html_report_model_name, model_fallback_names, model_name
 from custerion_collection.identity import resolve_canonical_film_identity
 from custerion_collection.models import RunDiagnostics
 from custerion_collection.storage import write_artifact_bundle, write_markdown_artifact, write_run_diagnostics
@@ -22,6 +23,7 @@ class DeepDiveRunResult:
     diagnostics_path: str
     markdown_path: str | None = None
     artifact_json_path: str | None = None
+    html_path: str | None = None
 
 
 MODEL_OVERRIDE_KEYS = [
@@ -31,6 +33,7 @@ MODEL_OVERRIDE_KEYS = [
     "MODEL_NAME_CULTURAL_HISTORIAN",
     "MODEL_NAME_TECHNICAL_DIRECTOR",
     "MODEL_NAME_INDUSTRIAL_ANALYST",
+    "MODEL_NAME_TRIVIA_RESEARCHER",
     "MODEL_NAME_FOLLOW_UP_CURATOR",
     "MODEL_NAME_SCRIPT_EDITOR",
 ]
@@ -62,13 +65,73 @@ def _unique_models(primary: str, fallbacks: list[str]) -> list[str]:
     return result
 
 
+def _render_html_report(markdown: str, selected_title: str) -> tuple[str | None, str | None]:
+    model = html_report_model_name()
+    if not model:
+        return None, None
+
+    try:
+        from litellm import completion  # type: ignore
+
+        response = completion(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert front-end report formatter. "
+                        "Return only full HTML for a standalone report page with embedded CSS. "
+                        "Style should be elegant, restrained, and highly readable. "
+                        "Use the movie as aesthetic inspiration in a subtle way: palette, typography, mood cues, and spacing. "
+                        "Do not create gimmicky or themed UI elements that distract from reading."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Format this deep-dive markdown into elegant HTML for '{selected_title}'. "
+                        "Preserve factual content and headings. Include responsive CSS. "
+                        "Make the visual language feel 'colored by the movie' but reserved and editorial. "
+                        "Prioritize typography, hierarchy, comfortable line length, and subtle accents over decorative effects.\n\n"
+                        + markdown
+                    ),
+                },
+            ],
+            temperature=0.3,
+        )
+        content = ""
+        if isinstance(response, dict):
+            content = (response.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+        else:
+            choices = getattr(response, "choices", [])
+            if choices:
+                message = getattr(choices[0], "message", None)
+                if message is not None:
+                    content = getattr(message, "content", "") or ""
+        html = content.strip()
+        if not html.lower().startswith("<!doctype html") and "<html" not in html.lower():
+            return None, f"MODEL_NAME_HTML_REPORTER response was not valid HTML: {model}"
+        return html, None
+    except Exception as exc:
+        return None, f"MODEL_NAME_HTML_REPORTER failed ({model}): {exc}"
+
+
 def execute_deep_dive(
     *,
     title: str | None,
     suggestion_mode: bool,
     process_mode_override: str | None,
     dry_run: bool,
+    progress_callback: Callable[[str, int], None] | None = None,
 ) -> DeepDiveRunResult:
+    def emit(stage: str, progress: int) -> None:
+        if progress_callback is None:
+            return
+        clamped = max(0, min(progress, 100))
+        progress_callback(stage, clamped)
+
+    emit("Initializing run", 5)
+
     if not title and not suggestion_mode and not dry_run:
         raise ValueError("Provide a title, enable suggestion mode, or use dry-run.")
 
@@ -80,6 +143,7 @@ def execute_deep_dive(
     status = "success"
 
     if title and not dry_run:
+        emit("Resolving film identity", 15)
         resolution = resolve_canonical_film_identity(title)
         if resolution.error:
             diagnostics_path = _write_failed_diagnostics(
@@ -96,6 +160,7 @@ def execute_deep_dive(
             selected_title = resolved_identity.title
 
     if dry_run:
+        emit("Generating dry-run output", 55)
         warnings.append("Dry-run mode enabled: CrewAI kickoff skipped.")
         markdown = _dry_run_markdown(title=selected_title, suggestion_mode=suggestion_mode)
     else:
@@ -115,13 +180,16 @@ def execute_deep_dive(
         try:
             for index, attempt_model in enumerate(attempt_models):
                 with _temporary_model_override(attempt_model):
+                    emit("Building crew", 35)
                     crew = build_deep_dive_crew(
                         title=selected_title,
                         suggestion_mode=suggestion_mode,
                         process_mode_override=process_mode_override,
                     )
                     try:
+                        emit("Running agent workflow", 60)
                         markdown = str(crew.kickoff())
+                        emit("Synthesizing output", 78)
                         if index > 0:
                             warnings.append(f"Fallback model used: {attempt_model}")
                         break
@@ -150,20 +218,27 @@ def execute_deep_dive(
     source_count = markdown.count("http://") + markdown.count("https://")
     markdown_path: str | None = None
     artifact_json_path: str | None = None
+    html_path: str | None = None
 
     try:
+        emit("Persisting artifacts", 88)
         artifact = build_deep_dive_artifact(
             title=selected_title,
             markdown=markdown,
             film_identity=resolved_identity,
         )
-        markdown_file, json_file = write_artifact_bundle(
+        html_content, html_warning = _render_html_report(markdown=markdown, selected_title=selected_title)
+        if html_warning:
+            warnings.append(html_warning)
+        markdown_file, json_file, html_file = write_artifact_bundle(
             title=selected_title,
             markdown=markdown,
             artifact=artifact,
+            html_content=html_content,
         )
         markdown_path = str(markdown_file)
         artifact_json_path = str(json_file)
+        html_path = str(html_file)
         coverage_ratio = _compute_citation_coverage(len(artifact.sections), len(artifact.citations))
     except Exception as exc:
         status = "degraded"
@@ -196,6 +271,7 @@ def execute_deep_dive(
         diagnostics_path=str(diagnostics_path),
         markdown_path=markdown_path,
         artifact_json_path=artifact_json_path,
+        html_path=html_path,
     )
 
 

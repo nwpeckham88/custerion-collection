@@ -434,3 +434,7 @@ def industry_tools() -> list:
 
 def follow_up_tools() -> list:
     return [follow_up_media_tool]
+
+
+def trivia_tools() -> list:
+    return [cultural_context_tool, technical_context_tool]

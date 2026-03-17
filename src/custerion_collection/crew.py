@@ -9,6 +9,7 @@ from custerion_collection.tools import (
     historian_tools,
     industry_tools,
     technical_tools,
+    trivia_tools,
 )
 
 
@@ -81,9 +82,18 @@ def build_deep_dive_crew(
         verbose=False,
     )
 
+    trivia = Agent(
+        role="Trivia Researcher",
+        goal="Find surprising, delightful trivia that is internally source-checked before use.",
+        backstory="Archivist specializing in obscure production notes, anecdotes, and historical curios.",
+        llm=_llm(role="Trivia Researcher"),
+        tools=trivia_tools(),
+        verbose=False,
+    )
+
     editor = Agent(
         role="Script Editor",
-        goal="Produce a single coherent narrative with confidence disclosures.",
+        goal="Produce a single coherent narrative that is informative, vivid, and accessible.",
         backstory="Senior editor who turns research into clear guided tours.",
         llm=_llm(role="Script Editor"),
         verbose=False,
@@ -116,7 +126,7 @@ def build_deep_dive_crew(
             f"Produce historical and critical context findings for '{title}'. "
             "Do not infer facts that are not supported by tool outputs."
         ),
-        expected_output="Structured notes with confidence and citations; mark unknowns when evidence is missing.",
+        expected_output="Structured notes the editor can transform into engaging prose, with sources kept for internal validation.",
         agent=historian,
         context=[planning],
     )
@@ -126,7 +136,7 @@ def build_deep_dive_crew(
             f"Produce craft and technical findings for '{title}'. "
             "Do not infer facts that are not supported by tool outputs."
         ),
-        expected_output="Structured technical notes with confidence and citations; mark unknowns when evidence is missing.",
+        expected_output="Structured technical notes with source grounding for internal validation.",
         agent=technical,
         context=[planning],
     )
@@ -136,7 +146,7 @@ def build_deep_dive_crew(
             f"Produce production and market impact findings for '{title}'. "
             "Do not infer facts that are not supported by tool outputs."
         ),
-        expected_output="Industry notes with confidence and citations; mark unknowns when evidence is missing.",
+        expected_output="Industry notes with source grounding for internal validation.",
         agent=industry,
         context=[planning],
     )
@@ -145,24 +155,36 @@ def build_deep_dive_crew(
         description=(
             f"Curate 5 to 8 follow-up media items for '{title}' with a max of 3 per type."
         ),
-        expected_output="A bounded list of links with one-sentence rationale and confidence.",
+        expected_output="A bounded list of links with one-sentence rationale.",
         agent=follow_up,
         context=[history, craft, market],
     )
 
+    trivia_notes = Task(
+        description=(
+            f"Produce 3 to 6 fun trivia facts about '{title}'. "
+            "Internally validate each fact with available sources before passing to the editor."
+        ),
+        expected_output="Bullet list of polished trivia facts plus internal source hints for validation.",
+        agent=trivia,
+        context=[planning, history, craft],
+    )
+
     synthesis = Task(
         description=(
-            "Synthesize final deep-dive in one voice. Include known unknowns, watch-next list, "
-            "confidence markers, and follow-up media appendix. Never invent facts; if unsupported, state insufficient evidence."
+            "Synthesize final deep-dive in one voice with an informative, engaging editorial tone. "
+            "Include watch-next list, a dedicated '## Trivia' section, and follow-up media appendix. "
+            "Do fact-validation internally; do not narrate the verification process or include confidence scores. "
+            "If key details are missing, briefly phrase them as open questions rather than audit language."
         ),
-        expected_output="Final deep-dive markdown with source references.",
+        expected_output="Final deep-dive markdown that reads like a polished film magazine feature.",
         agent=editor,
-        context=[personalization, history, craft, market, links],
+        context=[personalization, history, craft, market, trivia_notes, links],
     )
 
     return Crew(
-        agents=[curator, historian, technical, industry, follow_up, editor],
-        tasks=[planning, personalization, history, craft, market, links, synthesis],
+        agents=[curator, historian, technical, industry, trivia, follow_up, editor],
+        tasks=[planning, personalization, history, craft, market, trivia_notes, links, synthesis],
         process=_process(process_mode_override=process_mode_override),
         manager_agent=manager,
         verbose=True,

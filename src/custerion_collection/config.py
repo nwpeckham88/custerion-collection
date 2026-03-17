@@ -70,6 +70,16 @@ def model_fallback_names() -> list[str]:
     return result
 
 
+def html_report_model_name() -> str | None:
+    """Return optional model override for HTML report generation.
+
+    When unset, HTML rendering falls back to deterministic local formatting.
+    """
+
+    raw = os.getenv("MODEL_NAME_HTML_REPORTER", "").strip()
+    return raw or None
+
+
 def process_mode(override: str | None = None) -> str:
     """Return orchestration mode; allowed values are hierarchical or sequential."""
     raw_value = override if override is not None else os.getenv("PROCESS_MODE", "hierarchical")

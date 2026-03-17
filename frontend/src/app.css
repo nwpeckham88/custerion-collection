@@ -44,24 +44,24 @@
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
+  --background: oklch(0.155 0.006 285.8);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
+  --card: oklch(0.24 0.008 286);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
+  --popover: oklch(0.24 0.008 286);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.92 0.004 286.32);
   --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
+  --secondary: oklch(0.305 0.01 286.1);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
+  --muted: oklch(0.305 0.01 286.1);
+  --muted-foreground: oklch(0.82 0.012 286.1);
+  --accent: oklch(0.305 0.01 286.1);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
+  --border: oklch(1 0 0 / 22%);
+  --input: oklch(1 0 0 / 25%);
+  --ring: oklch(0.82 0.012 286.1);
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
@@ -71,10 +71,10 @@
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
+  --sidebar-accent: oklch(0.305 0.01 286.1);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.552 0.016 285.938);
+  --sidebar-border: oklch(1 0 0 / 22%);
+  --sidebar-ring: oklch(0.82 0.012 286.1);
 }
 
 @theme inline {
@@ -127,6 +127,13 @@
       radial-gradient(circle at 85% 12%, color-mix(in oklch, var(--color-secondary-500), transparent 84%), transparent 40%),
       linear-gradient(160deg, color-mix(in oklch, var(--background), white 10%), var(--background));
     min-height: 100vh;
+  }
+
+  .dark body {
+    background-image:
+      radial-gradient(circle at 20% 0%, color-mix(in oklch, var(--color-primary-500), transparent 88%), transparent 45%),
+      radial-gradient(circle at 85% 12%, color-mix(in oklch, var(--color-secondary-500), transparent 90%), transparent 40%),
+      linear-gradient(165deg, color-mix(in oklch, var(--background), black 8%), var(--background));
   }
 
   h1,

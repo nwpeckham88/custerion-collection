@@ -398,9 +398,26 @@
 
 <style>
 	.page-shell {
+		--accent-brand: oklch(0.62 0.16 252);
+		--accent-warm: oklch(0.72 0.14 68);
+		--panel-bg: color-mix(in oklch, white 84%, var(--background));
+		--panel-border: color-mix(in oklch, var(--foreground) 16%, transparent);
+		--field-bg: color-mix(in oklch, white 70%, var(--background));
+		--text-strong: color-mix(in oklch, var(--foreground) 96%, black);
+		--text-muted: color-mix(in oklch, var(--foreground) 62%, white);
 		position: relative;
 		min-height: 100vh;
 		padding: 1.25rem;
+	}
+
+	:global(.dark) .page-shell {
+		--accent-brand: oklch(0.8 0.1 245);
+		--accent-warm: oklch(0.83 0.11 86);
+		--panel-bg: color-mix(in oklch, var(--background) 88%, white 12%);
+		--panel-border: color-mix(in oklch, white 28%, transparent);
+		--field-bg: color-mix(in oklch, var(--background) 74%, white 26%);
+		--text-strong: oklch(0.97 0 0);
+		--text-muted: oklch(0.84 0.01 260);
 	}
 
 	.ambient-glow {
@@ -446,7 +463,7 @@
 		flex-wrap: wrap;
 	}
 
-	.brand-badge {
+	:global(.brand-badge) {
 		border-color: var(--accent-brand);
 		color: var(--text-strong);
 		background: color-mix(in oklch, var(--accent-brand) 16%, transparent);
@@ -492,7 +509,7 @@
 		background: currentColor;
 	}
 
-	.theme-toggle {
+	:global(.theme-toggle) {
 		border-radius: 999px;
 	}
 
@@ -622,7 +639,7 @@
 		gap: 0.55rem;
 	}
 
-	.run-button {
+	:global(.run-button) {
 		background: linear-gradient(135deg, var(--accent-brand), color-mix(in oklch, var(--accent-brand) 45%, white));
 		color: white;
 		border: 0;

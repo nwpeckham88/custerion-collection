@@ -6,6 +6,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+ARG INSTALL_TTS=0
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
@@ -14,7 +16,7 @@ COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN pip install --upgrade pip \
-    && pip install .
+    && if [ "$INSTALL_TTS" = "1" ]; then pip install ".[tts]"; else pip install .; fi
 
 EXPOSE 8000
 

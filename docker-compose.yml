@@ -3,11 +3,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        INSTALL_TTS: "0"
     env_file:
       - .env
     environment:
       DATA_DIR: /app/data
       FRONTEND_ORIGIN: http://localhost:4173
+      ENABLE_TTS: "0"
     volumes:
       - ./data:/app/data
     ports:

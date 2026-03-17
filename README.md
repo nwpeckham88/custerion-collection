@@ -119,19 +119,25 @@ When `MODEL_NAME_HTML_REPORTER` is unset, the project writes a deterministic sty
 ## Local TTS for Generated Reports
 Generated HTML reports include an in-page TTS control panel (voice select, play, stop).
 
-- TTS is fully local using Coqui TTS (`TTS` package).
-- Default model: `tts_models/en/vctk/vits` (multi-speaker voices).
-- Model files are downloaded once and cached on disk, then reused for later pages.
+- TTS is optional and disabled by default.
+- Default optional TTS backend is `edge-tts` (English neural voices, lightweight install, no large language model packs).
+- To enable default lightweight TTS, install optional dependencies with `pip install -e .[tts]` and set `ENABLE_TTS=1`.
+- If you want local Coqui synthesis instead, install `pip install -e .[tts-coqui]` and set `TTS_BACKEND=coqui`.
+- Coqui model files are downloaded once and cached on disk, then reused for later pages.
 
 Optional configuration:
 
 ```bash
-TTS_MODEL_NAME=tts_models/en/vctk/vits
-TTS_DEFAULT_VOICE=p225
+TTS_BACKEND=edge
+TTS_DEFAULT_VOICE=en-US-AriaNeural
 TTS_CACHE_DIR=./data/tts-cache
+ENABLE_TTS=1
 ```
 
 Notes:
+- Current support target is English-only.
+- `edge-tts` voice selection is filtered to English locale voices only.
+- For Coqui, use an English model only (example: `TTS_MODEL_NAME=tts_models/en/vctk/vits`).
 - First playback can take longer while the model is downloaded and initialized.
 - Subsequent playback reuses the cached model and cached audio when text/voice are unchanged.
 

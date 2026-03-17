@@ -15,6 +15,13 @@ dependencies = [
   "pydantic>=2.10.0",
   "fastapi>=0.116.0",
   "uvicorn>=0.35.0",
+]
+
+[project.optional-dependencies]
+tts = [
+  "edge-tts>=6.1.12",
+]
+tts-coqui = [
   "TTS>=0.22.0",
 ]
 

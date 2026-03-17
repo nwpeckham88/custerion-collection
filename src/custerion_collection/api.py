@@ -22,10 +22,15 @@ from custerion_collection.storage import (
     latest_markdown_artifact_for_slug,
     upsert_html_artifact_for_slug,
 )
-from custerion_collection.tts import list_tts_voices_for_slug, synthesize_tts_audio_for_slug
+from custerion_collection.tts import list_tts_voices_for_slug, synthesize_tts_audio_for_slug, tts_runtime_label
 
 
 logger = logging.getLogger(__name__)
+
+
+def _tts_enabled() -> bool:
+    raw = os.getenv("ENABLE_TTS", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 class DeepDiveRequest(BaseModel):
@@ -396,7 +401,8 @@ def get_artifact_html(slug: str) -> HTMLResponse:
         raise HTTPException(status_code=404, detail=f"HTML artifact not found for slug: {slug}")
     html = html_path.read_text(encoding="utf-8")
     html = _strip_placeholder_source_links_from_html(html)
-    html = _inject_tts_controls(html=html, slug=slug)
+    if _tts_enabled():
+        html = _inject_tts_controls(html=html, slug=slug)
     return HTMLResponse(content=html)
 
 
@@ -411,7 +417,7 @@ def get_artifact_tts_voices(slug: str) -> ArtifactTtsVoicesResponse:
 
     return ArtifactTtsVoicesResponse(
         slug=slug,
-        model=os.getenv("TTS_MODEL_NAME", "tts_models/en/vctk/vits"),
+        model=tts_runtime_label(),
         default_voice=default_voice,
         voices=voices,
     )
@@ -433,7 +439,8 @@ def get_artifact_tts_audio(
         logger.exception("Artifact TTS synthesis failed")
         raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {exc}") from exc
 
-    return FileResponse(path=str(audio_path), media_type="audio/wav", filename=audio_path.name)
+    media_type = "audio/mpeg" if audio_path.suffix.lower() == ".mp3" else "audio/wav"
+    return FileResponse(path=str(audio_path), media_type=media_type, filename=audio_path.name)
 
 
 @app.get("/artifacts/{slug}/commentary", response_model=ArtifactCommentaryResponse)

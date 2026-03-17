@@ -69,6 +69,33 @@ Reference placeholder: https://example.com/fake-source
         self.assertNotIn("https://example.com/reference", urls)
         self.assertNotIn("https://example.com/fake-source", citations)
 
+    def test_build_artifact_parses_guided_commentary_timestamps(self) -> None:
+        markdown = """
+## Guided Commentary Timeline
+- [00:42] Opening alleyway :: Rain and neon create immediate noir tension.
+- [01:15] Detective briefing :: Dialogue anchors the existential mystery.
+""".strip()
+
+        artifact = build_deep_dive_artifact("Blade Runner (1982)", markdown)
+
+        self.assertEqual(artifact.commentary_mode, "timed")
+        self.assertEqual(len(artifact.commentary_segments), 2)
+        self.assertEqual(artifact.commentary_segments[0].timestamp_ms, 42000)
+        self.assertEqual(artifact.commentary_segments[1].timestamp_ms, 75000)
+
+    def test_build_artifact_retains_untimed_commentary_lines(self) -> None:
+        markdown = """
+## Guided Commentary Timeline
+- Rooftop pursuit :: Movement and score escalate urgency.
+- Quiet apartment scene :: Light and framing stress emotional distance.
+""".strip()
+
+        artifact = build_deep_dive_artifact("Blade Runner (1982)", markdown)
+
+        self.assertEqual(artifact.commentary_mode, "untimed")
+        self.assertEqual(len(artifact.commentary_segments), 2)
+        self.assertIsNone(artifact.commentary_segments[0].timestamp_ms)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -30,6 +30,15 @@ class DeepDiveSection(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class CommentarySegment(BaseModel):
+    order_index: int = Field(ge=0)
+    timestamp_ms: int | None = Field(default=None, ge=0)
+    scene_label: str
+    commentary: str
+    source: str | None = None
+    confidence: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
 class FilmIdentity(BaseModel):
     title: str
     year: int
@@ -44,6 +53,8 @@ class DeepDiveArtifact(BaseModel):
     film: FilmIdentity
     personalized_intro: str
     sections: list[DeepDiveSection]
+    commentary_segments: list[CommentarySegment] = Field(default_factory=list)
+    commentary_mode: Literal["timed", "untimed", "mixed", "none"] = "none"
     watch_next: list[str]
     known_unknowns: list[str]
     follow_up_media: list[FollowUpMediaItem]

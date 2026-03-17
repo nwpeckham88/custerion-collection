@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from custerion_collection.models import (
+    CommentarySegment,
     DeepDiveArtifact,
     DeepDiveSection,
     FilmIdentity,
@@ -27,6 +28,8 @@ _PLACEHOLDER_SOURCE_DOMAINS = {
     "localhost",
 }
 
+_TIMESTAMP_RE = re.compile(r"\[(?P<h>\d{1,2}):(?P<m>\d{2})(?::(?P<s>\d{2}))?\]")
+
 
 def build_deep_dive_artifact(
     title: str,
@@ -38,6 +41,7 @@ def build_deep_dive_artifact(
 
     intro = _extract_intro(heading_map, markdown)
     sections = _build_core_sections(heading_map, markdown)
+    commentary_segments, commentary_mode = _extract_commentary_segments(heading_map, markdown)
     watch_next = _extract_watch_next(heading_map)
     known_unknowns = _extract_known_unknowns(heading_map)
     follow_up_media = _extract_follow_up_media(heading_map)
@@ -47,6 +51,8 @@ def build_deep_dive_artifact(
         film=identity,
         personalized_intro=intro,
         sections=sections,
+        commentary_segments=commentary_segments,
+        commentary_mode=commentary_mode,
         watch_next=watch_next,
         known_unknowns=known_unknowns,
         follow_up_media=follow_up_media,
@@ -162,6 +168,100 @@ def _extract_watch_next(heading_map: dict[str, str]) -> list[str]:
         deduped.append(item)
 
     return deduped[:8]
+
+
+def _extract_commentary_segments(
+    heading_map: dict[str, str],
+    markdown: str,
+) -> tuple[list[CommentarySegment], str]:
+    commentary_source = ""
+    for heading, content in heading_map.items():
+        lowered = heading.lower()
+        if "guided commentary" in lowered or "commentary timeline" in lowered or "scene commentary" in lowered:
+            commentary_source = content
+            break
+
+    if not commentary_source:
+        # Fall back to scanning whole markdown for timestamped lines.
+        commentary_source = markdown
+
+    raw_segments: list[tuple[int | None, str, str]] = []
+    for raw_line in commentary_source.splitlines():
+        line = re.sub(r"^\s*[-*\d.]+\s*", "", raw_line).strip()
+        if not line:
+            continue
+
+        ts_match = _TIMESTAMP_RE.search(line)
+        if ts_match:
+            timestamp_ms = _timestamp_match_to_ms(ts_match)
+            body = line[ts_match.end() :].strip(" -:\t")
+            scene_label, commentary = _split_scene_and_commentary(body)
+            if commentary:
+                raw_segments.append((timestamp_ms, scene_label, commentary))
+            continue
+
+        if commentary_source != markdown:
+            scene_label, commentary = _split_scene_and_commentary(line)
+            if commentary:
+                raw_segments.append((None, scene_label, commentary))
+
+    if not raw_segments:
+        return [], "none"
+
+    has_timed = any(item[0] is not None for item in raw_segments)
+    has_untimed = any(item[0] is None for item in raw_segments)
+
+    if has_timed:
+        timed = [item for item in raw_segments if item[0] is not None]
+        untimed = [item for item in raw_segments if item[0] is None]
+        timed.sort(key=lambda item: int(item[0] or 0))
+        raw_segments = timed + untimed
+
+    segments: list[CommentarySegment] = []
+    for idx, (timestamp_ms, scene_label, commentary) in enumerate(raw_segments):
+        segments.append(
+            CommentarySegment(
+                order_index=idx,
+                timestamp_ms=timestamp_ms,
+                scene_label=scene_label,
+                commentary=commentary,
+                source="timeline_parse",
+                confidence=0.7 if timestamp_ms is not None else 0.55,
+            )
+        )
+
+    mode = "mixed"
+    if has_timed and not has_untimed:
+        mode = "timed"
+    elif has_untimed and not has_timed:
+        mode = "untimed"
+
+    return segments[:240], mode
+
+
+def _timestamp_match_to_ms(match: re.Match[str]) -> int:
+    hours_or_minutes = int(match.group("h"))
+    minutes_or_seconds = int(match.group("m"))
+    seconds = match.group("s")
+    if seconds is None:
+        total_seconds = hours_or_minutes * 60 + minutes_or_seconds
+    else:
+        total_seconds = (hours_or_minutes * 3600) + (minutes_or_seconds * 60) + int(seconds)
+    return total_seconds * 1000
+
+
+def _split_scene_and_commentary(text: str) -> tuple[str, str]:
+    if not text:
+        return "Scene", ""
+
+    for divider in ("::", " - ", " | "):
+        if divider in text:
+            left, right = text.split(divider, 1)
+            scene = left.strip() or "Scene"
+            commentary = right.strip()
+            return scene, commentary
+
+    return "Scene", text.strip()
 
 
 def _extract_known_unknowns(heading_map: dict[str, str]) -> list[str]:

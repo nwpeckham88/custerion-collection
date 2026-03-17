@@ -17,6 +17,7 @@ from custerion_collection.service import execute_deep_dive, render_html_report_w
 from custerion_collection.storage import (
     artifact_title_for_slug,
     list_recent_artifacts,
+    load_artifact_for_slug,
     latest_html_artifact_for_slug,
     latest_markdown_artifact_for_slug,
     upsert_html_artifact_for_slug,
@@ -84,6 +85,32 @@ class ArtifactTtsVoicesResponse(BaseModel):
     model: str
     default_voice: str
     voices: list[str]
+
+
+class CommentarySegmentResponse(BaseModel):
+    order_index: int
+    timestamp_ms: int | None = None
+    scene_label: str
+    commentary: str
+    source: str | None = None
+    confidence: float
+
+
+class ArtifactCommentaryResponse(BaseModel):
+    slug: str
+    title: str
+    commentary_mode: str
+    duration_ms: int
+    segments: list[CommentarySegmentResponse]
+    external_playback: dict[str, str | int | None]
+
+
+class ArtifactCommentaryRealtimeResponse(BaseModel):
+    slug: str
+    commentary_mode: str
+    position_ms: int
+    active_segment: CommentarySegmentResponse | None = None
+    upcoming_segments: list[CommentarySegmentResponse] = Field(default_factory=list)
 
 
 _PLACEHOLDER_URL_RE = re.compile(r"https?://(?:www\.)?(example\.com|example\.org|example\.net|localhost)(?:/[^\s\"'<>]*)?", re.IGNORECASE)
@@ -407,6 +434,71 @@ def get_artifact_tts_audio(
         raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {exc}") from exc
 
     return FileResponse(path=str(audio_path), media_type="audio/wav", filename=audio_path.name)
+
+
+@app.get("/artifacts/{slug}/commentary", response_model=ArtifactCommentaryResponse)
+def get_artifact_commentary(slug: str) -> ArtifactCommentaryResponse:
+    artifact = load_artifact_for_slug(slug)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
+
+    duration_ms = 0
+    timed = [segment.timestamp_ms for segment in artifact.commentary_segments if segment.timestamp_ms is not None]
+    if timed:
+        duration_ms = max(timed)
+    elif artifact.film.runtime_minutes:
+        duration_ms = artifact.film.runtime_minutes * 60 * 1000
+
+    return ArtifactCommentaryResponse(
+        slug=slug,
+        title=artifact.film.title,
+        commentary_mode=artifact.commentary_mode,
+        duration_ms=duration_ms,
+        segments=[CommentarySegmentResponse(**segment.model_dump()) for segment in artifact.commentary_segments],
+        external_playback={
+            "provider": "jellyfin",
+            "itemId": artifact.film.external_ids.get("jellyfin_item_id"),
+            "positionMs": None,
+        },
+    )
+
+
+@app.get("/artifacts/{slug}/commentary/realtime", response_model=ArtifactCommentaryRealtimeResponse)
+def get_artifact_commentary_realtime(
+    slug: str,
+    position_ms: int = 0,
+    window_ms: int = 30000,
+    limit: int = 6,
+) -> ArtifactCommentaryRealtimeResponse:
+    artifact = load_artifact_for_slug(slug)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
+
+    bounded_position = max(0, position_ms)
+    bounded_window = max(1000, min(window_ms, 120000))
+    bounded_limit = max(1, min(limit, 20))
+
+    active = None
+    upcoming = []
+    for segment in artifact.commentary_segments:
+        ts = segment.timestamp_ms
+        if ts is None:
+            continue
+        if ts <= bounded_position:
+            active = segment
+            continue
+        if ts <= bounded_position + bounded_window:
+            upcoming.append(segment)
+        if len(upcoming) >= bounded_limit:
+            break
+
+    return ArtifactCommentaryRealtimeResponse(
+        slug=slug,
+        commentary_mode=artifact.commentary_mode,
+        position_ms=bounded_position,
+        active_segment=CommentarySegmentResponse(**active.model_dump()) if active else None,
+        upcoming_segments=[CommentarySegmentResponse(**segment.model_dump()) for segment in upcoming],
+    )
 
 
 @app.post("/artifacts/{slug}/html/regenerate", response_model=HtmlRegenerateResponse)

@@ -1,5 +1,61 @@
 {
   "$defs": {
+    "CommentarySegment": {
+      "properties": {
+        "commentary": {
+          "title": "Commentary",
+          "type": "string"
+        },
+        "confidence": {
+          "default": 0.7,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "order_index": {
+          "minimum": 0,
+          "title": "Order Index",
+          "type": "integer"
+        },
+        "scene_label": {
+          "title": "Scene Label",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "timestamp_ms": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp Ms"
+        }
+      },
+      "required": [
+        "order_index",
+        "scene_label",
+        "commentary"
+      ],
+      "title": "CommentarySegment",
+      "type": "object"
+    },
     "DeepDiveSection": {
       "properties": {
         "confidence": {
@@ -200,6 +256,24 @@
         "$ref": "#/$defs/SourceCitation"
       },
       "title": "Citations",
+      "type": "array"
+    },
+    "commentary_mode": {
+      "default": "none",
+      "enum": [
+        "timed",
+        "untimed",
+        "mixed",
+        "none"
+      ],
+      "title": "Commentary Mode",
+      "type": "string"
+    },
+    "commentary_segments": {
+      "items": {
+        "$ref": "#/$defs/CommentarySegment"
+      },
+      "title": "Commentary Segments",
       "type": "array"
     },
     "created_at": {

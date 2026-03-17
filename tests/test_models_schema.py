@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from pydantic import ValidationError
 
-from custerion_collection.models import DeepDiveArtifact, DeepDiveSection, FilmIdentity, FollowUpMediaItem
+from custerion_collection.models import CommentarySegment, DeepDiveArtifact, DeepDiveSection, FilmIdentity, FollowUpMediaItem
 from custerion_collection.models import deep_dive_artifact_json_schema
 
 
@@ -18,6 +18,17 @@ class TestModelSchema(unittest.TestCase):
         self.assertIn("sections", props)
         self.assertIn("follow_up_media", props)
         self.assertIn("citations", props)
+        self.assertIn("commentary_segments", props)
+        self.assertIn("commentary_mode", props)
+
+    def test_commentary_segment_requires_non_negative_timestamp(self) -> None:
+        with self.assertRaises(ValidationError):
+            CommentarySegment(
+                order_index=0,
+                timestamp_ms=-100,
+                scene_label="Opening",
+                commentary="A kinetic opening establishes tone.",
+            )
 
     def test_follow_up_media_duplicate_url_rejected(self) -> None:
         item1 = FollowUpMediaItem(

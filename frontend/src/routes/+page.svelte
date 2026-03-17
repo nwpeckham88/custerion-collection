@@ -414,6 +414,12 @@
 									</div>
 								{/if}
 								<div class="mt-2 flex flex-wrap items-center gap-2">
+									<a
+										href={`/artifacts/${artifact.slug}/commentary`}
+										class="inline-flex items-center rounded-md border border-black/15 px-2 py-1 text-xs font-medium hover:bg-black/5"
+									>
+										Open Guided Commentary
+									</a>
 									<Button
 										variant="outline"
 										size="sm"

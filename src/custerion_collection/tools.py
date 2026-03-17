@@ -283,6 +283,79 @@ def fetch_follow_up_media(title: str) -> str:
     return "\n".join(lines)
 
 
+def fetch_scene_transcript_context(title: str) -> str:
+    """Fetch transcript-like timestamp hints to support guided commentary timelines."""
+    hints: list[str] = []
+
+    movie, tmdb_error = _tmdb_resolve_movie(title)
+    if not tmdb_error and movie:
+        details, details_error = _tmdb_movie_details(movie_id=movie["id"], append=None)
+        if not details_error:
+            runtime = details.get("runtime")
+            if isinstance(runtime, int) and runtime > 0:
+                hints.append(
+                    f"Runtime hint: {runtime} minutes. Approximate scene checkpoints can be mapped across 00:00 to {runtime:02d}:00."
+                )
+
+    youtube_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    if youtube_key:
+        youtube_url = (
+            "https://www.googleapis.com/youtube/v3/search?"
+            + urlencode(
+                {
+                    "part": "snippet",
+                    "type": "video",
+                    "maxResults": "5",
+                    "q": f"{title} scene breakdown timestamps",
+                    "key": youtube_key,
+                }
+            )
+        )
+        payload, error = _http_get_json(youtube_url)
+        if not error:
+            for item in payload.get("items", []):
+                snippet = item.get("snippet") or {}
+                video_id = (item.get("id") or {}).get("videoId")
+                label = snippet.get("title")
+                desc = (snippet.get("description") or "").strip()
+                if not label or not video_id:
+                    continue
+                stamp_hits = re.findall(r"\b\d{1,2}:\d{2}(?::\d{2})?\b", desc)
+                stamp_preview = ", ".join(stamp_hits[:4]) if stamp_hits else "no explicit timestamps in snippet"
+                hints.append(
+                    "YouTube transcript lead: "
+                    f"{label} (https://www.youtube.com/watch?v={video_id}) | snippet timestamps: {stamp_preview}."
+                )
+
+    wiki_search_url = (
+        "https://en.wikipedia.org/w/api.php?"
+        + urlencode(
+            {
+                "action": "query",
+                "list": "search",
+                "srsearch": f"{title} plot",
+                "format": "json",
+                "srlimit": "1",
+            }
+        )
+    )
+    wiki_payload, wiki_error = _http_get_json(wiki_search_url)
+    if not wiki_error:
+        hits = ((wiki_payload or {}).get("query") or {}).get("search", [])
+        if hits:
+            snippet = _strip_html(hits[0].get("snippet", ""))
+            if snippet:
+                hints.append(f"Plot context for scene anchoring: {snippet}.")
+
+    if not hints:
+        return (
+            f"No reliable timestamped transcript context found for '{title}'. "
+            "Fallback guidance: generate untimed commentary lines with scene labels and keep statements source-grounded."
+        )
+
+    return "\n".join(hints)
+
+
 def _strip_html(raw: str) -> str:
     cleaned = re.sub(r"<[^>]+>", "", raw)
     cleaned = unescape(cleaned)
@@ -416,6 +489,12 @@ def follow_up_media_tool(title: str) -> str:
     return fetch_follow_up_media(title)
 
 
+@tool("fetch_scene_transcript_context")
+def scene_transcript_context_tool(title: str) -> str:
+    """Fetch timestamp and transcript context for guided movie commentary."""
+    return fetch_scene_transcript_context(title)
+
+
 def curator_tools() -> list:
     return [history_context_tool]
 
@@ -438,3 +517,7 @@ def follow_up_tools() -> list:
 
 def trivia_tools() -> list:
     return [cultural_context_tool, technical_context_tool]
+
+
+def commentary_tools() -> list:
+    return [scene_transcript_context_tool, cultural_context_tool, technical_context_tool]

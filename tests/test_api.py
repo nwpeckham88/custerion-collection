@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import unittest
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from custerion_collection.api import _RUNS, _RUNS_LOCK, app
+from custerion_collection.models import CommentarySegment, DeepDiveArtifact, DeepDiveSection, FilmIdentity
 from custerion_collection.service import DeepDiveRunResult
 
 
@@ -193,6 +195,59 @@ class TestApi(unittest.TestCase):
 
             self.assertEqual(response.status_code, 200)
             self.assertNotIn("example.com", response.text)
+
+    @patch("custerion_collection.api.load_artifact_for_slug")
+    def test_artifact_commentary_returns_segments(self, mock_load_artifact) -> None:
+        mock_load_artifact.return_value = DeepDiveArtifact(
+            film=FilmIdentity(title="Blade Runner", year=1982, canonical_id="local:blade-runner:1982"),
+            personalized_intro="intro",
+            sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+            commentary_segments=[
+                CommentarySegment(
+                    order_index=0,
+                    timestamp_ms=42000,
+                    scene_label="Opening",
+                    commentary="Neon and rain set tone.",
+                )
+            ],
+            commentary_mode="timed",
+            watch_next=[],
+            known_unknowns=[],
+            follow_up_media=[],
+            citations=[],
+            created_at=datetime.now(timezone.utc),
+        )
+
+        response = self.client.get("/artifacts/blade-runner/commentary")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["commentary_mode"], "timed")
+        self.assertEqual(payload["segments"][0]["timestamp_ms"], 42000)
+
+    @patch("custerion_collection.api.load_artifact_for_slug")
+    def test_artifact_commentary_realtime_returns_upcoming_segments(self, mock_load_artifact) -> None:
+        mock_load_artifact.return_value = DeepDiveArtifact(
+            film=FilmIdentity(title="Blade Runner", year=1982, canonical_id="local:blade-runner:1982"),
+            personalized_intro="intro",
+            sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+            commentary_segments=[
+                CommentarySegment(order_index=0, timestamp_ms=10000, scene_label="A", commentary="A"),
+                CommentarySegment(order_index=1, timestamp_ms=25000, scene_label="B", commentary="B"),
+                CommentarySegment(order_index=2, timestamp_ms=55000, scene_label="C", commentary="C"),
+            ],
+            commentary_mode="timed",
+            watch_next=[],
+            known_unknowns=[],
+            follow_up_media=[],
+            citations=[],
+            created_at=datetime.now(timezone.utc),
+        )
+
+        response = self.client.get("/artifacts/blade-runner/commentary/realtime?position_ms=12000&window_ms=20000")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["active_segment"]["timestamp_ms"], 10000)
+        self.assertEqual(payload["upcoming_segments"][0]["timestamp_ms"], 25000)
 
 
 if __name__ == "__main__":

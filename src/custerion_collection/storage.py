@@ -183,6 +183,18 @@ def upsert_html_artifact_for_slug(slug: str, html_content: str) -> Path:
     return target
 
 
+def load_artifact_for_slug(slug: str) -> DeepDiveArtifact | None:
+    json_path = latest_json_artifact_for_slug(slug)
+    if json_path is None or not json_path.exists():
+        return None
+
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+        return DeepDiveArtifact.model_validate(payload)
+    except Exception:
+        return None
+
+
 def _entry_mtime(entry: dict[str, Path | None]) -> float:
     markdown_path = entry["markdown"]
     json_path = entry["json"]

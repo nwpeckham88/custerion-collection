@@ -4,6 +4,7 @@ from crewai import Agent, Crew, LLM, Process, Task
 
 from custerion_collection.config import model_name, process_mode
 from custerion_collection.tools import (
+    commentary_tools,
     curator_tools,
     follow_up_tools,
     historian_tools,
@@ -99,6 +100,15 @@ def build_deep_dive_crew(
         verbose=False,
     )
 
+    commentator = Agent(
+        role="Scene Commentator",
+        goal="Build timestamped scene commentary aligned to the film timeline.",
+        backstory="Festival programmer who annotates films in real time for classroom screenings.",
+        llm=_llm(role="Scene Commentator"),
+        tools=commentary_tools(),
+        verbose=False,
+    )
+
     intake_text = "system suggestion mode" if suggestion_mode else "explicit title mode"
 
     planning = Task(
@@ -170,6 +180,20 @@ def build_deep_dive_crew(
         context=[planning, history, craft],
     )
 
+    commentary_timeline = Task(
+        description=(
+            f"Create a guided commentary timeline for '{title}' using timestamps whenever evidence is available. "
+            "Output a dedicated section titled '## Guided Commentary Timeline'. "
+            "Preferred format per line: [HH:MM:SS] Scene label :: commentary sentence. "
+            "When timestamps are unavailable, include untimed lines with 'Scene label :: commentary sentence'."
+        ),
+        expected_output=(
+            "A timeline section containing 8 to 20 concise commentary entries with grounded scene-level insights."
+        ),
+        agent=commentator,
+        context=[planning, history, craft, market],
+    )
+
     synthesis = Task(
         description=(
             "Synthesize final deep-dive in one voice with an informative, engaging editorial tone. "
@@ -179,12 +203,12 @@ def build_deep_dive_crew(
         ),
         expected_output="Final deep-dive markdown that reads like a polished film magazine feature.",
         agent=editor,
-        context=[personalization, history, craft, market, trivia_notes, links],
+        context=[personalization, history, craft, market, trivia_notes, commentary_timeline, links],
     )
 
     return Crew(
-        agents=[curator, historian, technical, industry, trivia, follow_up, editor],
-        tasks=[planning, personalization, history, craft, market, trivia_notes, links, synthesis],
+        agents=[curator, historian, technical, industry, trivia, follow_up, commentator, editor],
+        tasks=[planning, personalization, history, craft, market, trivia_notes, commentary_timeline, links, synthesis],
         process=_process(process_mode_override=process_mode_override),
         manager_agent=manager,
         verbose=True,

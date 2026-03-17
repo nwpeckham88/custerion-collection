@@ -6,9 +6,10 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-from custerion_collection.models import DeepDiveArtifact, DeepDiveSection, FilmIdentity, RunDiagnostics
+from custerion_collection.models import CommentarySegment, DeepDiveArtifact, DeepDiveSection, FilmIdentity, RunDiagnostics
 from custerion_collection.storage import (
     list_recent_artifacts,
+    load_artifact_for_slug,
     write_artifact_bundle,
     write_markdown_artifact,
     write_run_diagnostics,
@@ -117,6 +118,37 @@ class TestStorage(unittest.TestCase):
             items = list_recent_artifacts(limit=1)
 
             self.assertEqual(len(items), 1)
+
+    def test_load_artifact_for_slug_includes_commentary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["DATA_DIR"] = tmp
+            artifact = DeepDiveArtifact(
+                film=FilmIdentity(title="Test Film", year=2020, canonical_id="local:test-film:2020"),
+                personalized_intro="intro",
+                sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+                commentary_segments=[
+                    CommentarySegment(
+                        order_index=0,
+                        timestamp_ms=30000,
+                        scene_label="Opening",
+                        commentary="Visual tone established.",
+                    )
+                ],
+                commentary_mode="timed",
+                watch_next=[],
+                known_unknowns=[],
+                follow_up_media=[],
+                citations=[],
+                created_at=datetime.now(timezone.utc),
+            )
+
+            write_artifact_bundle(title="Test Film", markdown="content", artifact=artifact)
+            loaded = load_artifact_for_slug("test-film")
+
+            self.assertIsNotNone(loaded)
+            assert loaded is not None
+            self.assertEqual(len(loaded.commentary_segments), 1)
+            self.assertEqual(loaded.commentary_segments[0].timestamp_ms, 30000)
 
 
 if __name__ == "__main__":

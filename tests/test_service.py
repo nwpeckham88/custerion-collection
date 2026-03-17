@@ -75,7 +75,21 @@ class TestService(unittest.TestCase):
         first_crew = unittest.mock.Mock()
         first_crew.kickoff.side_effect = BadRequestError("model unavailable")
         second_crew = unittest.mock.Mock()
-        second_crew.kickoff.return_value = "## Personalized Intro\nFallback succeeded"
+        second_crew.kickoff.return_value = (
+            "## Personalized Intro\n"
+            "This suggestion is tailored for viewers who value emotionally expressive filmmaking with strong visual language.\n\n"
+            "## History\n"
+            "The film sits at the crossroads of post-war studio production and modern art-film sensibilities. "
+            "Reference: https://en.wikipedia.org/wiki/The_Red_Shoes_(film)\n\n"
+            "## Craft\n"
+            "Its color design and choreography-driven editing remain widely studied, with archival documentation available via "
+            "the BFI and restoration notes. Reference: https://www.bfi.org.uk/\n\n"
+            "## Industry\n"
+            "The release and long-tail impact demonstrate how prestige distribution can transform a film's canon status. "
+            "Reference: https://www.themoviedb.org/movie/19542\n\n"
+            "## Notable Lore\n"
+            "Production stories around rehearsal discipline and camera blocking have become part of the film's lasting lore.\n"
+        )
         mock_build_crew.side_effect = [first_crew, second_crew]
 
         result = execute_deep_dive(
@@ -86,8 +100,34 @@ class TestService(unittest.TestCase):
         )
 
         self.assertIn(result.status, {"success", "degraded"})
-        self.assertIn("Fallback succeeded", result.markdown)
+        self.assertIn("## History", result.markdown)
         self.assertIn("Fallback model used", " ".join(result.warnings))
+
+    @patch("custerion_collection.service.resolve_canonical_film_identity")
+    @patch("custerion_collection.crew.build_deep_dive_crew")
+    @patch("custerion_collection.service.model_fallback_names")
+    def test_execute_deep_dive_rejects_trivial_output(
+        self,
+        mock_fallbacks,
+        mock_build_crew,
+        mock_resolve_identity,
+    ) -> None:
+        mock_fallbacks.return_value = []
+        mock_resolve_identity.return_value = IdentityResolutionResult(identity=None, error=None)
+
+        crew = unittest.mock.Mock()
+        crew.kickoff.return_value = "## Personalized Intro\nFallback succeeded"
+        mock_build_crew.return_value = crew
+
+        with self.assertRaises(ValueError) as error:
+            execute_deep_dive(
+                title="The Red Shoes (1948)",
+                suggestion_mode=False,
+                process_mode_override="hierarchical",
+                dry_run=False,
+            )
+
+        self.assertIn("quality gates", str(error.exception))
 
 
 if __name__ == "__main__":

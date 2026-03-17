@@ -11,6 +11,7 @@ from custerion_collection.artifact_builder import build_deep_dive_artifact
 from custerion_collection.config import html_report_model_name, model_fallback_names, model_name
 from custerion_collection.identity import resolve_canonical_film_identity
 from custerion_collection.models import RunDiagnostics
+from custerion_collection.suggestion import suggest_film_title
 from custerion_collection.storage import write_artifact_bundle, write_markdown_artifact, write_run_diagnostics
 
 
@@ -37,6 +38,10 @@ MODEL_OVERRIDE_KEYS = [
     "MODEL_NAME_FOLLOW_UP_CURATOR",
     "MODEL_NAME_SCRIPT_EDITOR",
 ]
+
+
+MIN_MARKDOWN_CHARS = 500
+MIN_CITATION_COVERAGE = 0.5
 
 
 @contextmanager
@@ -142,9 +147,14 @@ def execute_deep_dive(
     warnings: list[str] = []
     status = "success"
 
-    if title and not dry_run:
+    if suggestion_mode and not title and not dry_run:
+        emit("Selecting suggested film", 10)
+        selected_title, suggestion_warnings = suggest_film_title()
+        warnings.extend(suggestion_warnings)
+
+    if selected_title and not dry_run:
         emit("Resolving film identity", 15)
-        resolution = resolve_canonical_film_identity(title)
+        resolution = resolve_canonical_film_identity(selected_title)
         if resolution.error:
             diagnostics_path = _write_failed_diagnostics(
                 run_id=run_id,
@@ -219,14 +229,38 @@ def execute_deep_dive(
     markdown_path: str | None = None
     artifact_json_path: str | None = None
     html_path: str | None = None
+    emit("Persisting artifacts", 88)
+
+    artifact = build_deep_dive_artifact(
+        title=selected_title,
+        markdown=markdown,
+        film_identity=resolved_identity,
+    )
+    quality_issues = _quality_issues(
+        markdown=markdown,
+        section_count=len(artifact.sections),
+        non_placeholder_section_count=sum(
+            1
+            for section in artifact.sections
+            if "limited confirmed detail" not in section.content.lower()
+        ),
+        citation_count=len(artifact.citations),
+    )
+    if quality_issues and not dry_run:
+        diagnostics_path = _write_failed_diagnostics(
+            run_id=run_id,
+            title=selected_title,
+            suggestion_mode=suggestion_mode,
+            started_at=started_at,
+            warning="; ".join(quality_issues),
+        )
+        raise ValueError(
+            "Generated output failed quality gates: "
+            + "; ".join(quality_issues)
+            + f" (diagnostics: {diagnostics_path})"
+        )
 
     try:
-        emit("Persisting artifacts", 88)
-        artifact = build_deep_dive_artifact(
-            title=selected_title,
-            markdown=markdown,
-            film_identity=resolved_identity,
-        )
         html_content, html_warning = _render_html_report(markdown=markdown, selected_title=selected_title)
         if html_warning:
             warnings.append(html_warning)
@@ -304,6 +338,34 @@ def _write_failed_diagnostics(
 def _compute_citation_coverage(section_count: int, citation_count: int) -> float:
     normalized_sections = max(1, section_count)
     return min(1.0, citation_count / normalized_sections)
+
+
+def _quality_issues(
+    *,
+    markdown: str,
+    section_count: int,
+    non_placeholder_section_count: int,
+    citation_count: int,
+) -> list[str]:
+    issues: list[str] = []
+    stripped = markdown.strip()
+
+    if len(stripped) < MIN_MARKDOWN_CHARS:
+        issues.append(
+            f"content too short ({len(stripped)} chars; minimum {MIN_MARKDOWN_CHARS})"
+        )
+
+    if section_count > 0 and non_placeholder_section_count < 2:
+        issues.append("insufficient substantive sections (need at least 2 non-placeholder sections)")
+
+    coverage = _compute_citation_coverage(section_count=section_count, citation_count=citation_count)
+    if coverage < MIN_CITATION_COVERAGE:
+        issues.append(
+            "citation coverage below threshold "
+            f"({coverage:.2f}; minimum {MIN_CITATION_COVERAGE:.2f})"
+        )
+
+    return issues
 
 
 def _dry_run_markdown(title: str, suggestion_mode: bool) -> str:

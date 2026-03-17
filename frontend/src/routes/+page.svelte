@@ -13,27 +13,20 @@
 		updated_at: string;
 	};
 
-	const walkthrough = [
+	const introFlow = [
 		{
-			id: 'step-1',
-			title: '1. Configure',
-			description: 'Set title, mode, and whether this run should be a dry-run.',
-			actionLabel: 'Jump to Form',
-			targetId: 'run-deep-dive'
+			title: 'Configure Your Run',
+			description: 'Pick a title, choose process mode, and decide whether to use dry-run or suggestion mode.'
 		},
 		{
-			id: 'step-2',
-			title: '2. Generate',
-			description: 'Run the deep dive and inspect run status, warnings, and diagnostics path.',
-			actionLabel: 'Run Now',
-			targetId: 'run-deep-dive'
+			title: 'Generate and Monitor',
+			description:
+				'Start a run and follow live status updates including stage, progress, warnings, and diagnostics output.'
 		},
 		{
-			id: 'step-3',
-			title: '3. Review',
-			description: 'Browse saved artifacts and open generated files from your data directory.',
-			actionLabel: 'See Artifacts',
-			targetId: 'saved-artifacts'
+			title: 'Review Artifacts',
+			description:
+				'Browse saved markdown, JSON, and HTML reports, then open formatted deep-dives from the artifact list.'
 		}
 	] as const;
 
@@ -46,11 +39,16 @@
 	let errorMessage = $state('');
 	let diagnosticsPath = $state('');
 	let runStatus = $state('');
+	let runId = $state('');
+	let runStage = $state('');
+	let runProgress = $state(0);
 	let resultMarkdown = $state('');
 	let runWarnings = $state<string[]>([]);
 	let artifacts = $state<ArtifactSummary[]>([]);
 	let artifactsLoading = $state(false);
 	let artifactsError = $state('');
+	let showIntroFlow = $state(true);
+	let currentIntroStep = $state(0);
 
 	onMount(async () => {
 		try {
@@ -67,17 +65,17 @@
 		document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	}
 
-	function walkthroughStatus(stepId: string): 'ready' | 'in progress' | 'done' {
-		if (stepId === 'step-1') {
-			return title.trim() || suggest ? 'done' : 'ready';
-		}
-		if (stepId === 'step-2') {
-			if (loading) {
-				return 'in progress';
-			}
-			return runStatus ? 'done' : 'ready';
-		}
-		return artifacts.length > 0 ? 'done' : 'ready';
+	function nextIntroStep(): void {
+		currentIntroStep = Math.min(introFlow.length - 1, currentIntroStep + 1);
+	}
+
+	function previousIntroStep(): void {
+		currentIntroStep = Math.max(0, currentIntroStep - 1);
+	}
+
+	function finishIntroFlow(): void {
+		showIntroFlow = false;
+		jumpTo('run-deep-dive');
 	}
 
 	async function loadArtifacts(): Promise<void> {
@@ -99,16 +97,55 @@
 		}
 	}
 
+	async function sleep(ms: number): Promise<void> {
+		await new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	async function pollRunStatus(activeRunId: string): Promise<void> {
+		const maxPolls = 240;
+		for (let poll = 0; poll < maxPolls; poll += 1) {
+			const response = await fetch(`/api/deep-dive/${encodeURIComponent(activeRunId)}`);
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'Run status request failed');
+			}
+
+			runStatus = payload.status ?? runStatus;
+			runStage = payload.stage ?? runStage;
+			runProgress = Number(payload.progress ?? runProgress);
+
+			if (payload.status === 'completed') {
+				const result = payload.result ?? {};
+				runStatus = result.status ?? 'success';
+				diagnosticsPath = result.diagnostics_path ?? '';
+				resultMarkdown = result.markdown ?? '';
+				runWarnings = Array.isArray(result.warnings) ? result.warnings : [];
+				return;
+			}
+
+			if (payload.status === 'failed') {
+				throw new Error(payload.error ?? 'Deep-dive run failed');
+			}
+
+			await sleep(1250);
+		}
+
+		throw new Error('Deep-dive run timed out while polling for completion');
+	}
+
 	async function runDeepDive(): Promise<void> {
 		loading = true;
 		errorMessage = '';
 		runStatus = '';
+		runId = '';
+		runStage = '';
+		runProgress = 0;
 		diagnosticsPath = '';
 		resultMarkdown = '';
 		runWarnings = [];
 
 		try {
-			const response = await fetch('/api/deep-dive', {
+			const startResponse = await fetch('/api/deep-dive/start', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
@@ -119,15 +156,24 @@
 				})
 			});
 
-			const payload = await response.json();
-			if (!response.ok) {
-				throw new Error(payload?.detail ?? 'Request failed');
+			const startPayload = await startResponse.json();
+			if (!startResponse.ok) {
+				throw new Error(startPayload?.detail ?? 'Run start failed');
 			}
 
-			runStatus = payload.status;
-			diagnosticsPath = payload.diagnostics_path;
-			resultMarkdown = payload.markdown;
-			runWarnings = Array.isArray(payload.warnings) ? payload.warnings : [];
+			runId = String(startPayload.run_id ?? '');
+			runStatus = String(startPayload.status ?? 'queued');
+			runStage = String(startPayload.stage ?? 'Queued');
+			runProgress = Number(startPayload.progress ?? 0);
+
+			if (!runId) {
+				throw new Error('Run start response missing run ID');
+			}
+
+			await pollRunStatus(runId);
+			if (runStatus === 'failed' || !resultMarkdown) {
+				throw new Error('Run completed without usable markdown output');
+			}
 
 			await loadArtifacts();
 		} catch (error) {
@@ -148,32 +194,17 @@
 						Generate guided film deep-dives from one production-ready workspace.
 					</h1>
 					<p class="max-w-2xl text-base text-muted-foreground md:text-lg">
-						Use the step cards below to configure, run, and review your deep-dive artifacts.
+						Configure a run, generate a deep dive, and review artifacts in one focused workflow.
 					</p>
+					<div class="flex flex-wrap gap-2">
+						<Button variant="outline" onclick={() => (showIntroFlow = true)}>Open Intro Flow</Button>
+						<Button variant="outline" onclick={() => jumpTo('run-deep-dive')}>Jump to Run Form</Button>
+					</div>
 				</div>
 				<div class="inline-flex h-fit items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-1 text-sm">
 					<span class="h-2 w-2 rounded-full {backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}"></span>
 					Backend: {backendStatus}
 				</div>
-			</div>
-
-			<div class="mt-6 grid gap-4 md:grid-cols-3">
-				{#each walkthrough as step}
-					<Card.Root class="border-black/10 bg-white">
-						<Card.Header class="space-y-2">
-							<div class="flex items-center justify-between gap-2">
-								<Card.Title class="text-xl">{step.title}</Card.Title>
-								<Badge class="border-0 {walkthroughStatus(step.id) === 'done' ? 'preset-filled-success-500' : walkthroughStatus(step.id) === 'in progress' ? 'preset-filled-warning-500' : 'preset-filled-surface-500'}">
-									{walkthroughStatus(step.id)}
-								</Badge>
-							</div>
-							<Card.Description>{step.description}</Card.Description>
-						</Card.Header>
-						<Card.Content>
-							<Button variant="outline" class="w-full" onclick={() => jumpTo(step.targetId)}>{step.actionLabel}</Button>
-						</Card.Content>
-					</Card.Root>
-				{/each}
 			</div>
 		</section>
 
@@ -218,7 +249,7 @@
 
 			<div class="flex flex-wrap gap-3">
 				<Button class="preset-filled-primary-500 border-0" onclick={runDeepDive} disabled={loading}>
-					{loading ? 'Generating...' : 'Generate'}
+					{loading ? 'Running...' : 'Generate'}
 				</Button>
 				<Button
 					variant="outline"
@@ -237,7 +268,14 @@
 
 			{#if runStatus}
 				<div class="rounded-xl border border-black/10 bg-white p-4 text-sm">
+					{#if runId}
+						<div><span class="font-semibold">Run ID:</span> <code>{runId}</code></div>
+					{/if}
 					<div><span class="font-semibold">Status:</span> {runStatus}</div>
+					{#if runStage}
+						<div class="mt-1"><span class="font-semibold">Stage:</span> {runStage}</div>
+					{/if}
+					<div class="mt-1"><span class="font-semibold">Progress:</span> {runProgress}%</div>
 					<div class="mt-1"><span class="font-semibold">Diagnostics:</span> {diagnosticsPath}</div>
 				</div>
 			{/if}
@@ -304,4 +342,82 @@
 			</div>
 		</section>
 	</div>
+
+	{#if showIntroFlow}
+		<div class="intro-overlay fixed inset-0 z-50 flex items-center justify-center p-4">
+			<div class="intro-atmosphere absolute inset-0" aria-hidden="true"></div>
+			<Card.Root class="intro-modal relative w-full max-w-2xl border-0 shadow-2xl">
+				<Card.Header class="space-y-3">
+					<div class="flex items-center justify-between gap-3">
+						<Badge class="border-0 bg-black text-white">Intro Flow</Badge>
+						<div class="text-xs text-muted-foreground">Step {currentIntroStep + 1} of {introFlow.length}</div>
+					</div>
+					<Card.Title class="text-3xl leading-tight tracking-tight md:text-4xl">{introFlow[currentIntroStep].title}</Card.Title>
+					<Card.Description class="text-sm md:text-base">
+						{introFlow[currentIntroStep].description}
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="space-y-5">
+					<div class="h-2 w-full overflow-hidden rounded-full bg-black/10">
+						<div
+							class="h-full rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 transition-all duration-500"
+							style={`width: ${((currentIntroStep + 1) / introFlow.length) * 100}%`}
+						></div>
+					</div>
+
+					<div class="rounded-xl border border-black/10 bg-white/70 p-3 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+						Guided onboarding to get you from setup to your first deep-dive artifact.
+					</div>
+
+					<div class="flex flex-wrap justify-between gap-2">
+						<Button variant="ghost" class="text-black/70 hover:text-black" onclick={() => (showIntroFlow = false)}
+							>Skip Intro</Button
+						>
+						<div class="flex gap-2">
+							<Button variant="outline" class="border-black/20" onclick={previousIntroStep} disabled={currentIntroStep === 0}
+								>Back</Button
+							>
+							{#if currentIntroStep < introFlow.length - 1}
+								<Button class="border-0 bg-black text-white hover:bg-black/90" onclick={nextIntroStep}>Next</Button>
+							{:else}
+								<Button class="border-0 bg-emerald-700 text-white hover:bg-emerald-800" onclick={finishIntroFlow}
+									>Start Exploring</Button
+								>
+							{/if}
+						</div>
+					</div>
+				</Card.Content>
+			</Card.Root>
+		</div>
+	{/if}
 </main>
+
+<style>
+	.intro-overlay {
+		background: color-mix(in oklch, black 45%, transparent);
+		backdrop-filter: blur(6px);
+	}
+
+	.intro-atmosphere {
+		background:
+			radial-gradient(circle at 14% 20%, rgba(255, 190, 92, 0.28), transparent 44%),
+			radial-gradient(circle at 82% 16%, rgba(212, 67, 41, 0.24), transparent 42%),
+			radial-gradient(circle at 50% 92%, rgba(42, 53, 72, 0.24), transparent 48%);
+	}
+
+	.intro-modal {
+		background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), rgba(249, 245, 236, 0.96));
+		animation: intro-rise 220ms ease-out;
+	}
+
+	@keyframes intro-rise {
+		from {
+			opacity: 0;
+			transform: translateY(10px) scale(0.985);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+</style>

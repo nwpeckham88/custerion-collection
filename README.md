@@ -64,6 +64,8 @@ Endpoints:
 Proxy endpoints exposed by the frontend server:
 - `GET /api/health`
 - `POST /api/deep-dive`
+- `POST /api/deep-dive/start`
+- `GET /api/deep-dive/{runId}`
 - `GET /api/artifacts?limit=20`
 
 The backend container persists generated files via `./data:/app/data`.
@@ -115,6 +117,21 @@ MODEL_NAME_HTML_REPORTER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 When `MODEL_NAME_HTML_REPORTER` is unset, the project writes a deterministic styled HTML report locally.
 
 Use `--suggest` instead of `--title` to run suggestion mode.
+
+Suggestion mode selection order:
+- Uses TMDb weekly trending films first when `TMDB_API_KEY` is configured.
+- Filters out obvious repeats based on recent Jellyfin resume titles when Jellyfin is configured.
+- Falls back to Jellyfin recent titles when TMDb is unavailable.
+- Uses a deterministic fallback title only when provider data is unavailable.
+
+## Quality Gates
+To prevent low-value artifacts, non-dry-run deep-dive outputs must pass minimum quality checks before persistence:
+
+- Output length must meet a minimum markdown size threshold.
+- Output must include at least 2 substantive (non-placeholder) core sections.
+- Citation coverage ratio must meet a minimum threshold.
+
+If a run fails these gates, it is marked failed, diagnostics are written under `data/diagnostics/`, and the API/CLI returns a clear error instead of saving a weak artifact as success.
 
 Override process mode per run:
 

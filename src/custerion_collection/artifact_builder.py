@@ -232,13 +232,14 @@ def _extract_citations(markdown: str, follow_up_media: list[FollowUpMediaItem]) 
         parsed = urlparse(clean)
         provider = parsed.netloc or "unknown"
         source_id = parsed.path.strip("/") or f"source-{idx}"
+        claim_ref = _claim_ref_for_url(markdown=markdown, url=clean, fallback_idx=idx)
         citations.append(
             SourceCitation(
                 provider=provider,
                 source_id=source_id,
                 url=clean,
                 confidence=0.7,
-                claim_ref=f"claim-{idx}",
+                claim_ref=claim_ref,
             )
         )
 
@@ -270,3 +271,18 @@ def _line_title(line: str, url: str) -> str:
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "untitled"
+
+
+def _claim_ref_for_url(markdown: str, url: str, fallback_idx: int) -> str:
+    for raw_line in markdown.splitlines():
+        if url not in raw_line:
+            continue
+        candidate = raw_line.replace(url, "")
+        candidate = re.sub(r"^\s*[-*\d.]+\s*", "", candidate).strip(" -:\t")
+        if not candidate:
+            break
+        candidate = re.sub(r"\s+", " ", candidate)
+        if len(candidate) > 120:
+            candidate = candidate[:117].rstrip() + "..."
+        return candidate
+    return f"claim-{fallback_idx}"

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -45,11 +45,26 @@
 	let resultMarkdown = $state('');
 	let runWarnings = $state<string[]>([]);
 	let runEvents = $state<string[]>([]);
+	let runEventsPanel = $state<HTMLDivElement | null>(null);
 	let artifacts = $state<ArtifactSummary[]>([]);
 	let artifactsLoading = $state(false);
 	let artifactsError = $state('');
 	let showIntroFlow = $state(true);
 	let currentIntroStep = $state(0);
+
+	async function scrollRunEventsToBottom(): Promise<void> {
+		if (!runEventsPanel || runEvents.length === 0) {
+			return;
+		}
+
+		await tick();
+		runEventsPanel.scrollTop = runEventsPanel.scrollHeight;
+	}
+
+	$effect(() => {
+		runEvents.length;
+		void scrollRunEventsToBottom();
+	});
 
 	onMount(async () => {
 		try {
@@ -284,7 +299,10 @@
 					{#if runEvents.length > 0}
 						<div class="mt-3">
 							<div class="font-semibold">Agent Conversation</div>
-							<div class="mt-2 max-h-56 overflow-auto rounded-lg border border-black/10 bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed">
+							<div
+								class="mt-2 max-h-56 overflow-auto rounded-lg border border-black/10 bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed"
+								bind:this={runEventsPanel}
+							>
 								{#each runEvents as event}
 									<div>{event}</div>
 								{/each}

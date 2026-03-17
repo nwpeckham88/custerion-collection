@@ -44,6 +44,7 @@
 	let runProgress = $state(0);
 	let resultMarkdown = $state('');
 	let runWarnings = $state<string[]>([]);
+	let runEvents = $state<string[]>([]);
 	let artifacts = $state<ArtifactSummary[]>([]);
 	let artifactsLoading = $state(false);
 	let artifactsError = $state('');
@@ -113,6 +114,7 @@
 			runStatus = payload.status ?? runStatus;
 			runStage = payload.stage ?? runStage;
 			runProgress = Number(payload.progress ?? runProgress);
+			runEvents = Array.isArray(payload.events) ? payload.events.map((entry: unknown) => String(entry)) : runEvents;
 
 			if (payload.status === 'completed') {
 				const result = payload.result ?? {};
@@ -143,6 +145,7 @@
 		diagnosticsPath = '';
 		resultMarkdown = '';
 		runWarnings = [];
+		runEvents = [];
 
 		try {
 			const startResponse = await fetch('/api/deep-dive/start', {
@@ -165,6 +168,7 @@
 			runStatus = String(startPayload.status ?? 'queued');
 			runStage = String(startPayload.stage ?? 'Queued');
 			runProgress = Number(startPayload.progress ?? 0);
+			runEvents = ['System: Run queued'];
 
 			if (!runId) {
 				throw new Error('Run start response missing run ID');
@@ -277,6 +281,16 @@
 					{/if}
 					<div class="mt-1"><span class="font-semibold">Progress:</span> {runProgress}%</div>
 					<div class="mt-1"><span class="font-semibold">Diagnostics:</span> {diagnosticsPath}</div>
+					{#if runEvents.length > 0}
+						<div class="mt-3">
+							<div class="font-semibold">Agent Conversation</div>
+							<div class="mt-2 max-h-56 overflow-auto rounded-lg border border-black/10 bg-neutral-50 px-3 py-2 font-mono text-xs leading-relaxed">
+								{#each runEvents as event}
+									<div>{event}</div>
+								{/each}
+							</div>
+						</div>
+					{/if}
 				</div>
 			{/if}
 

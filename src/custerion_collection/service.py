@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import os
 import uuid
+import re
+from contextlib import redirect_stderr, redirect_stdout
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import TextIOBase
 from typing import Callable
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
@@ -42,6 +45,41 @@ MODEL_OVERRIDE_KEYS = [
 
 MIN_MARKDOWN_CHARS = 500
 MIN_CITATION_COVERAGE = 0.5
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _normalize_event_line(line: str) -> str:
+    cleaned = ANSI_ESCAPE_RE.sub("", line).strip()
+    if not cleaned:
+        return ""
+    if cleaned.startswith("[") and cleaned.endswith("]") and len(cleaned) < 4:
+        return ""
+    return cleaned
+
+
+class _EventStream(TextIOBase):
+    def __init__(self, callback: Callable[[str], None]):
+        super().__init__()
+        self._callback = callback
+        self._buffer = ""
+
+    def write(self, s: str) -> int:  # type: ignore[override]
+        if not s:
+            return 0
+        self._buffer += s
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            normalized = _normalize_event_line(line)
+            if normalized:
+                self._callback(normalized)
+        return len(s)
+
+    def flush(self) -> None:  # type: ignore[override]
+        if self._buffer:
+            normalized = _normalize_event_line(self._buffer)
+            if normalized:
+                self._callback(normalized)
+            self._buffer = ""
 
 
 @contextmanager
@@ -128,6 +166,7 @@ def execute_deep_dive(
     process_mode_override: str | None,
     dry_run: bool,
     progress_callback: Callable[[str, int], None] | None = None,
+    event_callback: Callable[[str], None] | None = None,
 ) -> DeepDiveRunResult:
     def emit(stage: str, progress: int) -> None:
         if progress_callback is None:
@@ -135,7 +174,15 @@ def execute_deep_dive(
         clamped = max(0, min(progress, 100))
         progress_callback(stage, clamped)
 
+    def event(message: str) -> None:
+        if event_callback is None:
+            return
+        normalized = _normalize_event_line(message)
+        if normalized:
+            event_callback(normalized)
+
     emit("Initializing run", 5)
+    event("System: Initializing deep-dive run")
 
     if not title and not suggestion_mode and not dry_run:
         raise ValueError("Provide a title, enable suggestion mode, or use dry-run.")
@@ -146,14 +193,17 @@ def execute_deep_dive(
     started_at = datetime.now(timezone.utc)
     warnings: list[str] = []
     status = "success"
+    artifact = None
 
     if suggestion_mode and not title and not dry_run:
         emit("Selecting suggested film", 10)
+        event("System: Selecting suggested film")
         selected_title, suggestion_warnings = suggest_film_title()
         warnings.extend(suggestion_warnings)
 
     if selected_title and not dry_run:
         emit("Resolving film identity", 15)
+        event(f"System: Resolving film identity for '{selected_title}'")
         resolution = resolve_canonical_film_identity(selected_title)
         if resolution.error:
             diagnostics_path = _write_failed_diagnostics(
@@ -171,6 +221,7 @@ def execute_deep_dive(
 
     if dry_run:
         emit("Generating dry-run output", 55)
+        event("System: Dry-run enabled, skipping multi-agent kickoff")
         warnings.append("Dry-run mode enabled: CrewAI kickoff skipped.")
         markdown = _dry_run_markdown(title=selected_title, suggestion_mode=suggestion_mode)
     else:
@@ -185,12 +236,13 @@ def execute_deep_dive(
             "ServiceUnavailableError",
         }
         provider_failures: list[str] = []
+        quality_failures: list[str] = []
         markdown = ""
-
         try:
             for index, attempt_model in enumerate(attempt_models):
                 with _temporary_model_override(attempt_model):
                     emit("Building crew", 35)
+                    event(f"System: Building crew with model '{attempt_model}'")
                     crew = build_deep_dive_crew(
                         title=selected_title,
                         suggestion_mode=suggestion_mode,
@@ -198,17 +250,59 @@ def execute_deep_dive(
                     )
                     try:
                         emit("Running agent workflow", 60)
-                        markdown = str(crew.kickoff())
+                        event("System: Running agent workflow")
+                        stream = _EventStream(event)
+                        with redirect_stdout(stream), redirect_stderr(stream):
+                            markdown = str(crew.kickoff())
+                        stream.flush()
+                        candidate_artifact = build_deep_dive_artifact(
+                            title=selected_title,
+                            markdown=markdown,
+                            film_identity=resolved_identity,
+                        )
+                        candidate_quality_issues = _quality_issues(
+                            markdown=markdown,
+                            section_count=len(candidate_artifact.sections),
+                            non_placeholder_section_count=sum(
+                                1
+                                for section in candidate_artifact.sections
+                                if "limited confirmed detail" not in section.content.lower()
+                            ),
+                            citation_count=len(candidate_artifact.citations),
+                        )
+                        if candidate_quality_issues:
+                            failure_summary = "; ".join(candidate_quality_issues)
+                            quality_failures.append(f"{attempt_model}: {failure_summary}")
+                            event(
+                                "System: Output quality check failed on "
+                                f"'{attempt_model}' ({failure_summary})"
+                            )
+                            continue
+
+                        artifact = candidate_artifact
                         emit("Synthesizing output", 78)
+                        event("System: Synthesizing final output")
                         if index > 0:
                             warnings.append(f"Fallback model used: {attempt_model}")
+                            event(f"System: Fallback model succeeded ({attempt_model})")
                         break
                     except Exception as exc:
                         if exc.__class__.__name__ in provider_error_names:
                             provider_failures.append(f"{attempt_model}: {exc}")
+                            event(f"System: Provider failure on model '{attempt_model}' ({exc})")
                             continue
                         raise
             else:
+                if quality_failures and provider_failures:
+                    raise ValueError(
+                        "All configured models failed due to provider or quality issues: "
+                        + " | ".join([*provider_failures, *quality_failures])
+                    )
+                if quality_failures:
+                    raise ValueError(
+                        "Generated output failed quality gates across all configured models: "
+                        + " | ".join(quality_failures)
+                    )
                 raise ValueError(
                     "LLM provider request failed for all configured models: "
                     + " | ".join(provider_failures)
@@ -230,12 +324,14 @@ def execute_deep_dive(
     artifact_json_path: str | None = None
     html_path: str | None = None
     emit("Persisting artifacts", 88)
+    event("System: Persisting markdown and structured artifacts")
 
-    artifact = build_deep_dive_artifact(
-        title=selected_title,
-        markdown=markdown,
-        film_identity=resolved_identity,
-    )
+    if artifact is None:
+        artifact = build_deep_dive_artifact(
+            title=selected_title,
+            markdown=markdown,
+            film_identity=resolved_identity,
+        )
     quality_issues = _quality_issues(
         markdown=markdown,
         section_count=len(artifact.sections),
@@ -264,6 +360,7 @@ def execute_deep_dive(
         html_content, html_warning = _render_html_report(markdown=markdown, selected_title=selected_title)
         if html_warning:
             warnings.append(html_warning)
+            event(f"Warning: {html_warning}")
         markdown_file, json_file, html_file = write_artifact_bundle(
             title=selected_title,
             markdown=markdown,
@@ -277,6 +374,7 @@ def execute_deep_dive(
     except Exception as exc:
         status = "degraded"
         warnings.append(f"Structured artifact export failed: {exc}")
+        event(f"Warning: Structured artifact export failed: {exc}")
         markdown_file = write_markdown_artifact(title=selected_title, content=markdown)
         markdown_path = str(markdown_file)
         coverage_ratio = 0.0

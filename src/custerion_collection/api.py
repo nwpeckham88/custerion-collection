@@ -59,6 +59,7 @@ class DeepDiveRunStatus(BaseModel):
     progress: int
     started_at: str
     updated_at: str
+    events: list[str] = Field(default_factory=list)
     result: DeepDiveResponse | None = None
     error: str | None = None
 
@@ -79,6 +80,7 @@ app.add_middleware(
 
 _RUNS_LOCK = Lock()
 _RUNS: dict[str, dict[str, object]] = {}
+MAX_RUN_EVENTS = 200
 
 
 def _now_iso() -> str:
@@ -94,12 +96,38 @@ def _set_run_state(run_id: str, **updates: object) -> None:
         current["updated_at"] = _now_iso()
 
 
+def _append_run_event(run_id: str, message: str) -> None:
+    cleaned = message.strip()
+    if not cleaned:
+        return
+
+    with _RUNS_LOCK:
+        current = _RUNS.get(run_id)
+        if current is None:
+            return
+        events = current.get("events")
+        if not isinstance(events, list):
+            events = []
+            current["events"] = events
+        if events and events[-1] == cleaned:
+            return
+        events.append(cleaned)
+        if len(events) > MAX_RUN_EVENTS:
+            del events[:-MAX_RUN_EVENTS]
+        current["updated_at"] = _now_iso()
+
+
 def _run_deep_dive_background(run_id: str, request: DeepDiveRequest) -> None:
     try:
         _set_run_state(run_id, status="running", stage="Preparing execution", progress=10)
+        _append_run_event(run_id, "System: Preparing execution")
 
         def progress(stage: str, pct: int) -> None:
             _set_run_state(run_id, status="running", stage=stage, progress=pct)
+            _append_run_event(run_id, f"Stage: {stage} ({pct}%)")
+
+        def event(message: str) -> None:
+            _append_run_event(run_id, message)
 
         result = execute_deep_dive(
             title=request.title,
@@ -107,6 +135,7 @@ def _run_deep_dive_background(run_id: str, request: DeepDiveRequest) -> None:
             process_mode_override=request.process_mode,
             dry_run=request.dry_run,
             progress_callback=progress,
+            event_callback=event,
         )
         _set_run_state(
             run_id,
@@ -125,6 +154,7 @@ def _run_deep_dive_background(run_id: str, request: DeepDiveRequest) -> None:
             ).model_dump(),
             error=None,
         )
+        _append_run_event(run_id, "System: Run completed")
     except ValueError as exc:
         _set_run_state(
             run_id,
@@ -133,6 +163,7 @@ def _run_deep_dive_background(run_id: str, request: DeepDiveRequest) -> None:
             progress=100,
             error=str(exc),
         )
+        _append_run_event(run_id, f"Error: {exc}")
     except Exception as exc:
         logger.exception("Deep-dive background run failed")
         _set_run_state(
@@ -142,6 +173,7 @@ def _run_deep_dive_background(run_id: str, request: DeepDiveRequest) -> None:
             progress=100,
             error=f"Deep-dive generation failed: {exc}",
         )
+        _append_run_event(run_id, f"Error: Deep-dive generation failed: {exc}")
 
 
 @app.get("/health")
@@ -191,6 +223,7 @@ def start_deep_dive(request: DeepDiveRequest, background_tasks: BackgroundTasks)
             "progress": 0,
             "started_at": now,
             "updated_at": now,
+            "events": ["System: Run queued"],
             "result": None,
             "error": None,
         }
@@ -214,6 +247,7 @@ def get_deep_dive_status(run_id: str) -> DeepDiveRunStatus:
         progress=int(snapshot["progress"]),
         started_at=str(snapshot["started_at"]),
         updated_at=str(snapshot["updated_at"]),
+        events=[str(item) for item in snapshot.get("events", []) if isinstance(item, str)],
         error=str(snapshot["error"]) if snapshot["error"] else None,
         result=DeepDiveResponse(**snapshot["result"]) if snapshot.get("result") else None,
     )

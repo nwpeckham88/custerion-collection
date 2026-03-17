@@ -92,6 +92,26 @@ class TestApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_deep_dive_status_includes_events(self) -> None:
+        with _RUNS_LOCK:
+            _RUNS["run-1"] = {
+                "run_id": "run-1",
+                "status": "running",
+                "stage": "Running",
+                "progress": 42,
+                "started_at": "2026-03-17T00:00:00+00:00",
+                "updated_at": "2026-03-17T00:00:01+00:00",
+                "events": ["System: Run queued", "Agent: researching"],
+                "result": None,
+                "error": None,
+            }
+
+        response = self.client.get("/deep-dive/run-1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["events"], ["System: Run queued", "Agent: researching"])
+
 
 if __name__ == "__main__":
     unittest.main()

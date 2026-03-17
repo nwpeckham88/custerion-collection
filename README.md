@@ -85,6 +85,9 @@ MODEL_NAME=openrouter/openai/gpt-4.1-mini
 
 `OPENAI_BASE_URL` must include protocol (`https://`).
 
+This project includes `litellm` by default, so non-native provider model strings
+can be routed through LiteLLM without additional installation.
+
 Optional multi-model routing by role:
 
 ```bash
@@ -143,9 +146,8 @@ LLM_LIVE_TEST_COOLDOWN_SECONDS=30 \
 PYTHONPATH=src python -m unittest tests.test_live_llm_integration -v
 ```
 
-Note: if you use OpenRouter without installing `litellm`, set `LLM_LIVE_TEST_MODEL`
-with an OpenAI provider prefix (for example `openai/nvidia/nemotron-...`) so
-CrewAI can initialize via its native OpenAI provider path.
+Note: for maximum compatibility in live tests, set `LLM_LIVE_TEST_MODEL` to the
+exact model/provider string you want to validate through LiteLLM.
 
 ## CI/CD
 - CI runs on pushes/PRs to `main`/`master` and executes tests, schema export, and dry-run smoke checks.

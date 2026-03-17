@@ -60,12 +60,20 @@ def execute_deep_dive(
     else:
         from custerion_collection.crew import build_deep_dive_crew
 
-        crew = build_deep_dive_crew(
-            title=selected_title,
-            suggestion_mode=suggestion_mode,
-            process_mode_override=process_mode_override,
-        )
-        markdown = str(crew.kickoff())
+        try:
+            crew = build_deep_dive_crew(
+                title=selected_title,
+                suggestion_mode=suggestion_mode,
+                process_mode_override=process_mode_override,
+            )
+            markdown = str(crew.kickoff())
+        except ImportError as exc:
+            raise ValueError(
+                "Unable to initialize LLM provider for this model configuration. "
+                "Use a supported provider-style model name (for example 'openai/<model>') "
+                "or install LiteLLM ('pip install litellm'). "
+                "You can also run with dry-run enabled while configuring providers."
+            ) from exc
 
     source_count = markdown.count("http://") + markdown.count("https://")
     markdown_path: str | None = None

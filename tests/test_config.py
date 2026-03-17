@@ -4,10 +4,27 @@ import os
 import unittest
 from unittest.mock import patch
 
-from custerion_collection.config import model_name, process_mode
+from custerion_collection.config import model_name, process_mode, sync_provider_env
 
 
 class TestConfig(unittest.TestCase):
+    @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=True)
+    def test_sync_provider_env_sets_openrouter_key(self) -> None:
+        sync_provider_env()
+        self.assertEqual(os.environ.get("OPENROUTER_API_KEY"), "test-key")
+
+    @patch.dict(
+        os.environ,
+        {
+            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+            "OPENAI_API_KEY": "test-key",
+        },
+        clear=True,
+    )
+    def test_sync_provider_env_sets_openrouter_base(self) -> None:
+        sync_provider_env()
+        self.assertEqual(os.environ.get("OPENROUTER_API_BASE"), "https://openrouter.ai/api/v1")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_model_name_defaults(self) -> None:
         self.assertEqual(model_name(), "gpt-4o-mini")

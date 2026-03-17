@@ -83,6 +83,9 @@ OPENAI_BASE_URL=https://openrouter.ai/api/v1
 MODEL_NAME=openrouter/openai/gpt-4.1-mini
 ```
 
+`OPENROUTER_API_KEY` is optional in this project when `OPENAI_API_KEY` is set;
+runtime config automatically mirrors it for LiteLLM provider auth.
+
 `OPENAI_BASE_URL` must include protocol (`https://`).
 
 This project includes `litellm` by default, so non-native provider model strings

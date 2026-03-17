@@ -80,7 +80,8 @@ To use OpenRouter as the OpenAI-compatible backend:
 ```bash
 OPENAI_API_KEY=<your_openrouter_key>
 OPENAI_BASE_URL=https://openrouter.ai/api/v1
-MODEL_NAME=openrouter/openai/gpt-4.1-mini
+MODEL_NAME=openrouter/nvidia/nemotron-3-super-120b-a12b:free
+MODEL_FALLBACKS=openrouter/qwen/qwen3-next-80b-a3b-instruct:free,openrouter/openrouter/free
 ```
 
 `OPENROUTER_API_KEY` is optional in this project when `OPENAI_API_KEY` is set;
@@ -90,6 +91,10 @@ runtime config automatically mirrors it for LiteLLM provider auth.
 
 This project includes `litellm` by default, so non-native provider model strings
 can be routed through LiteLLM without additional installation.
+
+`MODEL_FALLBACKS` is optional. If the primary model returns provider errors
+(for example unavailable model ID or transient provider limits), the backend
+automatically retries using each fallback in order.
 
 Optional multi-model routing by role:
 

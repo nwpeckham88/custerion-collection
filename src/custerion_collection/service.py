@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import os
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
+from custerion_collection.config import model_fallback_names, model_name
 from custerion_collection.identity import resolve_canonical_film_identity
 from custerion_collection.models import RunDiagnostics
 from custerion_collection.storage import write_artifact_bundle, write_markdown_artifact, write_run_diagnostics
@@ -19,6 +22,44 @@ class DeepDiveRunResult:
     diagnostics_path: str
     markdown_path: str | None = None
     artifact_json_path: str | None = None
+
+
+MODEL_OVERRIDE_KEYS = [
+    "MODEL_NAME",
+    "MODEL_NAME_CREATIVE_DIRECTOR",
+    "MODEL_NAME_PERSONAL_MATCHMAKER",
+    "MODEL_NAME_CULTURAL_HISTORIAN",
+    "MODEL_NAME_TECHNICAL_DIRECTOR",
+    "MODEL_NAME_INDUSTRIAL_ANALYST",
+    "MODEL_NAME_FOLLOW_UP_CURATOR",
+    "MODEL_NAME_SCRIPT_EDITOR",
+]
+
+
+@contextmanager
+def _temporary_model_override(model: str):
+    previous = {key: os.environ.get(key) for key in MODEL_OVERRIDE_KEYS}
+    for key in MODEL_OVERRIDE_KEYS:
+        os.environ[key] = model
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _unique_models(primary: str, fallbacks: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for candidate in [primary, *fallbacks]:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        result.append(candidate)
+    return result
 
 
 def execute_deep_dive(
@@ -60,13 +101,40 @@ def execute_deep_dive(
     else:
         from custerion_collection.crew import build_deep_dive_crew
 
+        primary_model = model_name()
+        attempt_models = _unique_models(primary_model, model_fallback_names())
+        provider_error_names = {
+            "AuthenticationError",
+            "BadRequestError",
+            "RateLimitError",
+            "ServiceUnavailableError",
+        }
+        provider_failures: list[str] = []
+        markdown = ""
+
         try:
-            crew = build_deep_dive_crew(
-                title=selected_title,
-                suggestion_mode=suggestion_mode,
-                process_mode_override=process_mode_override,
-            )
-            markdown = str(crew.kickoff())
+            for index, attempt_model in enumerate(attempt_models):
+                with _temporary_model_override(attempt_model):
+                    crew = build_deep_dive_crew(
+                        title=selected_title,
+                        suggestion_mode=suggestion_mode,
+                        process_mode_override=process_mode_override,
+                    )
+                    try:
+                        markdown = str(crew.kickoff())
+                        if index > 0:
+                            warnings.append(f"Fallback model used: {attempt_model}")
+                        break
+                    except Exception as exc:
+                        if exc.__class__.__name__ in provider_error_names:
+                            provider_failures.append(f"{attempt_model}: {exc}")
+                            continue
+                        raise
+            else:
+                raise ValueError(
+                    "LLM provider request failed for all configured models: "
+                    + " | ".join(provider_failures)
+                )
         except ImportError as exc:
             raise ValueError(
                 "Unable to initialize LLM provider for this model configuration. "
@@ -74,6 +142,10 @@ def execute_deep_dive(
                 "or install LiteLLM ('pip install litellm'). "
                 "You can also run with dry-run enabled while configuring providers."
             ) from exc
+        except Exception as exc:
+            if exc.__class__.__name__ in provider_error_names:
+                raise ValueError(f"LLM provider request failed: {exc}") from exc
+            raise
 
     source_count = markdown.count("http://") + markdown.count("https://")
     markdown_path: str | None = None

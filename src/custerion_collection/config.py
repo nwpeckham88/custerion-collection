@@ -49,6 +49,27 @@ def model_name(role: str | None = None) -> str:
     return os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 
+def model_fallback_names() -> list[str]:
+    """Return ordered fallback models from MODEL_FALLBACKS.
+
+    Expected format: comma-separated model slugs.
+    """
+
+    raw = os.getenv("MODEL_FALLBACKS", "")
+    if not raw.strip():
+        return []
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for part in raw.split(","):
+        candidate = part.strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        result.append(candidate)
+    return result
+
+
 def process_mode(override: str | None = None) -> str:
     """Return orchestration mode; allowed values are hierarchical or sequential."""
     raw_value = override if override is not None else os.getenv("PROCESS_MODE", "hierarchical")

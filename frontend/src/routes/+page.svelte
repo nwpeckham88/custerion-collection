@@ -205,24 +205,44 @@
 
 <main class="relative overflow-hidden px-5 py-8 md:px-10 md:py-12">
 	<div class="mx-auto flex w-full max-w-6xl flex-col gap-6">
-		<section class="rounded-3xl border border-black/10 bg-white/80 p-6 shadow-xl backdrop-blur md:p-10">
+		<section class="hero-shell rounded-3xl border border-black/10 p-6 shadow-xl md:p-10">
 			<div class="flex flex-wrap items-start justify-between gap-4">
-				<div class="space-y-4">
-					<Badge class="preset-filled-secondary-500 border-0">Custerion Collection</Badge>
-					<h1 class="max-w-3xl text-4xl font-bold leading-tight text-balance md:text-6xl">
-						Generate guided film deep-dives from one production-ready workspace.
-					</h1>
-					<p class="max-w-2xl text-base text-muted-foreground md:text-lg">
-						Configure a run, generate a deep dive, and review artifacts in one focused workflow.
-					</p>
-					<div class="flex flex-wrap gap-2">
-						<Button variant="outline" onclick={() => (showIntroFlow = true)}>Open Intro Flow</Button>
-						<Button variant="outline" onclick={() => jumpTo('run-deep-dive')}>Jump to Run Form</Button>
-					</div>
-				</div>
-				<div class="inline-flex h-fit items-center gap-2 rounded-full border border-black/10 bg-white px-3 py-1 text-sm">
+				<Badge class="border-0 bg-black text-white">Custerion Collection</Badge>
+				<div class="inline-flex h-fit items-center gap-2 rounded-full border border-black/10 bg-white/85 px-3 py-1 text-sm">
 					<span class="h-2 w-2 rounded-full {backendStatus === 'online' ? 'bg-green-500' : 'bg-red-500'}"></span>
 					Backend: {backendStatus}
+				</div>
+			</div>
+
+			<div class="mt-5 grid gap-5 md:grid-cols-[1.25fr_0.75fr] md:items-end">
+				<div class="space-y-4">
+					<h1 class="max-w-3xl text-4xl font-bold leading-tight text-balance md:text-6xl">
+						From one title to a cinematic deep-dive.
+					</h1>
+					<p class="max-w-xl text-base text-black/75 md:text-lg">
+						Run the crew, watch the agent conversation, open the finished report.
+					</p>
+					<div class="flex flex-wrap gap-2">
+						<Button class="border-0 bg-black text-white hover:bg-black/90" onclick={() => jumpTo('run-deep-dive')}
+							>Start a Run</Button
+						>
+						<Button variant="outline" onclick={() => (showIntroFlow = true)}>Open Intro Flow</Button>
+					</div>
+				</div>
+
+				<div class="hero-metrics grid gap-2 rounded-2xl border border-black/10 bg-white/70 p-3 text-sm backdrop-blur">
+					<div class="metric-row">
+						<span>Mode</span>
+						<strong>{processMode}</strong>
+					</div>
+					<div class="metric-row">
+						<span>Dry run</span>
+						<strong>{dryRun ? 'On' : 'Off'}</strong>
+					</div>
+					<div class="metric-row">
+						<span>Artifacts</span>
+						<strong>{artifacts.length}</strong>
+					</div>
 				</div>
 			</div>
 		</section>
@@ -425,6 +445,26 @@
 </main>
 
 <style>
+	.hero-shell {
+		background:
+			radial-gradient(circle at 8% 12%, rgba(255, 198, 116, 0.35), transparent 42%),
+			radial-gradient(circle at 92% 20%, rgba(220, 90, 66, 0.24), transparent 38%),
+			linear-gradient(158deg, rgba(255, 255, 255, 0.92), rgba(247, 241, 232, 0.9));
+		backdrop-filter: blur(8px);
+	}
+
+	.metric-row {
+		display: flex;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 6px 4px;
+		border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+	}
+
+	.metric-row:last-child {
+		border-bottom: 0;
+	}
+
 	.intro-overlay {
 		background: color-mix(in oklch, black 45%, transparent);
 		backdrop-filter: blur(6px);

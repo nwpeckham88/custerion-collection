@@ -4,10 +4,27 @@ import unittest
 from unittest.mock import patch
 
 from custerion_collection.identity import IdentityResolutionResult
-from custerion_collection.service import execute_deep_dive
+from custerion_collection.service import _editorial_polish_guardrails, execute_deep_dive
 
 
 class TestService(unittest.TestCase):
+    def test_editorial_polish_guardrails_remove_internal_note_lines(self) -> None:
+        raw = (
+            "# Title\n"
+            "Intro line.\n"
+            "Intro line.\n"
+            "Open question for the team: validate this.\n"
+            "Editor note (for completion): expand section.\n"
+            "## History\n"
+            "Good paragraph.\n"
+        )
+
+        cleaned = _editorial_polish_guardrails(raw)
+
+        self.assertNotIn("Open question for the team", cleaned)
+        self.assertNotIn("Editor note", cleaned)
+        self.assertEqual(cleaned.count("Intro line."), 1)
+
     @patch("custerion_collection.service.resolve_canonical_film_identity")
     @patch("custerion_collection.crew.build_deep_dive_crew")
     def test_execute_deep_dive_surfaces_provider_setup_error(

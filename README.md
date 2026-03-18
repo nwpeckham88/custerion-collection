@@ -108,6 +108,15 @@ MODEL_NAME_TRIVIA_RESEARCHER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 
 Role override key format is `MODEL_NAME_<ROLE_NAME>`, where role names are uppercase with spaces replaced by underscores.
 
+Optional dedicated model for final article writing:
+
+```bash
+MODEL_NAME_ARTICLE_WRITER=openrouter/openai/gpt-4.1
+```
+
+Model precedence for final long-form synthesis is:
+`MODEL_NAME_ARTICLE_WRITER` -> `MODEL_NAME_SCRIPT_EDITOR` -> `MODEL_NAME`.
+
 Optional dedicated model for HTML report generation:
 
 ```bash

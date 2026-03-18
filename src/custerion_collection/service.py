@@ -48,6 +48,7 @@ MODEL_OVERRIDE_KEYS = [
     "MODEL_NAME_INDUSTRIAL_ANALYST",
     "MODEL_NAME_TRIVIA_RESEARCHER",
     "MODEL_NAME_FOLLOW_UP_CURATOR",
+    "MODEL_NAME_ARTICLE_WRITER",
     "MODEL_NAME_SCRIPT_EDITOR",
 ]
 
@@ -56,6 +57,13 @@ MIN_MARKDOWN_CHARS = 500
 MIN_CITATION_COVERAGE = 0.5
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 PLACEHOLDER_SOURCE_DOMAINS = {"example.com", "example.org", "example.net", "localhost"}
+_EDITORIAL_BAN_PHRASES = (
+    "open question for the team",
+    "editor note",
+    "for completion",
+    "in this run",
+    "in this workflow",
+)
 
 
 def _normalize_event_line(line: str) -> str:
@@ -65,6 +73,35 @@ def _normalize_event_line(line: str) -> str:
     if cleaned.startswith("[") and cleaned.endswith("]") and len(cleaned) < 4:
         return ""
     return cleaned
+
+
+def _editorial_polish_guardrails(markdown: str) -> str:
+    """Apply final copy guardrails so output reads like publication prose.
+
+    This is intentionally conservative: drop obvious project-document lines and
+    collapse accidental adjacent duplicate lines.
+    """
+
+    lines = markdown.splitlines()
+    filtered: list[str] = []
+
+    for line in lines:
+        lowered = line.strip().lower()
+        if any(phrase in lowered for phrase in _EDITORIAL_BAN_PHRASES):
+            continue
+        filtered.append(line)
+
+    deduped: list[str] = []
+    previous_normalized = ""
+    for line in filtered:
+        normalized = re.sub(r"\s+", " ", line).strip().lower()
+        if normalized and normalized == previous_normalized:
+            continue
+        deduped.append(line)
+        previous_normalized = normalized
+
+    cleaned = "\n".join(deduped).strip()
+    return cleaned or markdown.strip()
 
 
 class _EventStream(TextIOBase):
@@ -338,6 +375,7 @@ def execute_deep_dive(
                         stream = _EventStream(event)
                         with redirect_stdout(stream), redirect_stderr(stream):
                             markdown = str(crew.kickoff())
+                        markdown = _editorial_polish_guardrails(markdown)
                         stream.flush()
                         candidate_artifact = build_deep_dive_artifact(
                             title=selected_title,

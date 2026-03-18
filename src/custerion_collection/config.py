@@ -85,6 +85,26 @@ def model_name(role: str | None = None) -> str:
     return os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 
+def article_writer_model_name() -> str:
+    """Return model for the final long-form article synthesis step.
+
+    Priority order:
+    1) MODEL_NAME_ARTICLE_WRITER
+    2) MODEL_NAME_SCRIPT_EDITOR (legacy compatibility)
+    3) MODEL_NAME
+    """
+
+    explicit = os.getenv("MODEL_NAME_ARTICLE_WRITER", "").strip()
+    if explicit:
+        return explicit
+
+    legacy = os.getenv("MODEL_NAME_SCRIPT_EDITOR", "").strip()
+    if legacy:
+        return legacy
+
+    return model_name()
+
+
 def model_fallback_names() -> list[str]:
     """Return ordered fallback models from MODEL_FALLBACKS.
 

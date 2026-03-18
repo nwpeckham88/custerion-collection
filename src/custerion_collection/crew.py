@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from crewai import Agent, Crew, LLM, Process, Task
 
-from custerion_collection.config import model_name, process_mode
+from custerion_collection.config import article_writer_model_name, model_name, process_mode
 from custerion_collection.tools import (
     commentary_tools,
     curator_tools,
@@ -96,7 +96,7 @@ def build_deep_dive_crew(
         role="Script Editor",
         goal="Produce a single coherent narrative that is informative, vivid, and accessible.",
         backstory="Senior editor who turns research into clear guided tours.",
-        llm=_llm(role="Script Editor"),
+        llm=LLM(model=article_writer_model_name()),
         verbose=False,
     )
 
@@ -173,9 +173,12 @@ def build_deep_dive_crew(
     trivia_notes = Task(
         description=(
             f"Produce 3 to 6 fun trivia facts about '{title}'. "
+            "Prioritize surprising production details, creative decisions, and reception anecdotes that are still source-grounded. "
             "Internally validate each fact with available sources before passing to the editor."
         ),
-        expected_output="Bullet list of polished trivia facts plus internal source hints for validation.",
+        expected_output=(
+            "Bullet list of polished trivia facts that are vivid and reader-friendly, plus internal source hints for validation."
+        ),
         agent=trivia,
         context=[planning, history, craft],
     )
@@ -196,10 +199,19 @@ def build_deep_dive_crew(
 
     synthesis = Task(
         description=(
-            "Synthesize final deep-dive in one voice with an informative, engaging editorial tone. "
-            "Include watch-next list, a dedicated '## Trivia' section, and follow-up media appendix. "
-            "Do fact-validation internally; do not narrate the verification process or include confidence scores. "
-            "If key details are missing, briefly phrase them as open questions rather than audit language."
+            "Write the final deep-dive as a polished film-magazine feature in one cohesive editorial voice. "
+            "Make it vivid, readable, and fun while staying faithful to available evidence. "
+            "Do internal fact-validation silently; never narrate QA process, confidence scoring, or team workflow. "
+            "Do not include project-management language such as 'open question', 'for the team', 'editor note', 'in this run', "
+            "or 'workflow'. Replace missing-detail caveats with concise reader-facing caveats in natural prose. "
+            "Output markdown using this structure: "
+            "1) H1 title and one-line dek, "
+            "2) engaging intro, "
+            "3) ## History, ## Craft, ## Industry, ## Notable Lore (each narrative, not bullet-dumps), "
+            "4) ## Trivia with high-interest bullets, "
+            "5) ## What to Watch Next, "
+            "6) ## Follow-Up Media. "
+            "Keep the final piece publishable and avoid repeating the same sentence."
         ),
         expected_output="Final deep-dive markdown that reads like a polished film magazine feature.",
         agent=editor,

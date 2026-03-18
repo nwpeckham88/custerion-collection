@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from custerion_collection.config import (
+    article_writer_model_name,
     html_report_model_name,
     model_name,
     openrouter_extra_headers,
@@ -51,6 +52,33 @@ class TestConfig(unittest.TestCase):
     def test_model_name_role_override(self) -> None:
         self.assertEqual(model_name(role="Technical Director"), "openrouter/openai/gpt-4.1-mini")
         self.assertEqual(model_name(role="Cultural Historian"), "openrouter/meta-llama/llama-3.1-8b-instruct")
+
+    @patch.dict(
+        os.environ,
+        {
+            "MODEL_NAME": "openrouter/base",
+            "MODEL_NAME_SCRIPT_EDITOR": "openrouter/script-editor",
+            "MODEL_NAME_ARTICLE_WRITER": "openrouter/article-writer",
+        },
+        clear=True,
+    )
+    def test_article_writer_model_prefers_dedicated_override(self) -> None:
+        self.assertEqual(article_writer_model_name(), "openrouter/article-writer")
+
+    @patch.dict(
+        os.environ,
+        {
+            "MODEL_NAME": "openrouter/base",
+            "MODEL_NAME_SCRIPT_EDITOR": "openrouter/script-editor",
+        },
+        clear=True,
+    )
+    def test_article_writer_model_falls_back_to_legacy_script_editor(self) -> None:
+        self.assertEqual(article_writer_model_name(), "openrouter/script-editor")
+
+    @patch.dict(os.environ, {"MODEL_NAME": "openrouter/base"}, clear=True)
+    def test_article_writer_model_falls_back_to_default_model(self) -> None:
+        self.assertEqual(article_writer_model_name(), "openrouter/base")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_html_report_model_name_defaults_none(self) -> None:

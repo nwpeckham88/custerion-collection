@@ -69,17 +69,30 @@ def write_run_diagnostics(diagnostics: RunDiagnostics) -> Path:
 
 def list_recent_artifacts(limit: int = 20) -> list[dict[str, Any]]:
     artifacts = ensure_data_dirs()
+    tts_audio_dir = (artifacts / "tts").resolve()
 
     grouped: dict[str, dict[str, Path | None]] = {}
 
     for markdown_path in artifacts.glob("*.md"):
-        grouped.setdefault(markdown_path.stem, {"markdown": None, "json": None, "html": None})["markdown"] = markdown_path
+        grouped.setdefault(markdown_path.stem, {"markdown": None, "json": None, "html": None, "tts_audio": None})[
+            "markdown"
+        ] = markdown_path
 
     for json_path in artifacts.glob("*.json"):
-        grouped.setdefault(json_path.stem, {"markdown": None, "json": None, "html": None})["json"] = json_path
+        grouped.setdefault(json_path.stem, {"markdown": None, "json": None, "html": None, "tts_audio": None})["json"] = json_path
 
     for html_path in artifacts.glob("*.html"):
-        grouped.setdefault(html_path.stem, {"markdown": None, "json": None, "html": None})["html"] = html_path
+        grouped.setdefault(html_path.stem, {"markdown": None, "json": None, "html": None, "tts_audio": None})["html"] = html_path
+
+    if tts_audio_dir.exists():
+        for stem, paths in grouped.items():
+            tts_candidates = sorted(
+                list(tts_audio_dir.glob(f"{stem}-*.wav")) + list(tts_audio_dir.glob(f"{stem}-*.mp3")),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            if tts_candidates:
+                paths["tts_audio"] = tts_candidates[0]
 
     ordered = sorted(
         grouped.items(),
@@ -92,6 +105,7 @@ def list_recent_artifacts(limit: int = 20) -> list[dict[str, Any]]:
         markdown_path = paths["markdown"]
         json_path = paths["json"]
         html_path = paths["html"]
+        tts_audio_path = paths["tts_audio"]
 
         title = _extract_title_from_artifact_json(json_path)
         if not title:
@@ -104,6 +118,7 @@ def list_recent_artifacts(limit: int = 20) -> list[dict[str, Any]]:
                 "markdown_path": str(markdown_path) if markdown_path else None,
                 "artifact_json_path": str(json_path) if json_path else None,
                 "html_path": str(html_path) if html_path else None,
+                "tts_audio_path": str(tts_audio_path) if tts_audio_path else None,
                 "updated_at": datetime.fromtimestamp(
                     _entry_mtime(paths),
                     tz=timezone.utc,
@@ -138,10 +153,50 @@ def latest_markdown_artifact_for_slug(slug: str) -> Path | None:
     return candidates[0]
 
 
+def latest_tts_audio_artifact_for_slug(slug: str) -> Path | None:
+    artifacts = ensure_data_dirs()
+    tts_audio_dir = (artifacts / "tts").resolve()
+    if not tts_audio_dir.exists():
+        return None
+
+    candidates = sorted(
+        list(tts_audio_dir.glob(f"{slug}-*.wav")) + list(tts_audio_dir.glob(f"{slug}-*.mp3")),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
 def latest_json_artifact_for_slug(slug: str) -> Path | None:
     artifacts = ensure_data_dirs()
     candidates = sorted(
         artifacts.glob(f"{slug}*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def latest_subtitle_artifact_for_slug(slug: str) -> Path | None:
+    artifacts = ensure_data_dirs()
+    candidates = sorted(
+        artifacts.glob(f"{slug}*.srt"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    return candidates[0]
+
+
+def latest_commentary_plan_artifact_for_slug(slug: str) -> Path | None:
+    artifacts = ensure_data_dirs()
+    candidates = sorted(
+        artifacts.glob(f"{slug}*.commentary-plan.json"),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
@@ -183,6 +238,67 @@ def upsert_html_artifact_for_slug(slug: str, html_content: str) -> Path:
     return target
 
 
+def upsert_subtitle_artifact_for_slug(slug: str, subtitle_text: str) -> Path:
+    artifacts = ensure_data_dirs()
+
+    candidates: list[Path] = []
+    markdown_path = latest_markdown_artifact_for_slug(slug)
+    json_path = latest_json_artifact_for_slug(slug)
+    html_path = latest_html_artifact_for_slug(slug)
+    subtitle_path = latest_subtitle_artifact_for_slug(slug)
+
+    if markdown_path:
+        candidates.append(markdown_path)
+    if json_path:
+        candidates.append(json_path)
+    if html_path:
+        candidates.append(html_path)
+    if subtitle_path:
+        candidates.append(subtitle_path)
+
+    if candidates:
+        stem = max(candidates, key=lambda path: path.stat().st_mtime).stem
+    else:
+        stem = slug
+
+    target = artifacts / f"{stem}.srt"
+    target.write_text(subtitle_text, encoding="utf-8")
+    return target
+
+
+def upsert_commentary_plan_artifact_for_slug(slug: str, payload: dict[str, Any]) -> Path:
+    artifacts = ensure_data_dirs()
+
+    candidates: list[Path] = []
+    markdown_path = latest_markdown_artifact_for_slug(slug)
+    json_path = latest_json_artifact_for_slug(slug)
+    html_path = latest_html_artifact_for_slug(slug)
+    subtitle_path = latest_subtitle_artifact_for_slug(slug)
+    commentary_plan_path = latest_commentary_plan_artifact_for_slug(slug)
+
+    if markdown_path:
+        candidates.append(markdown_path)
+    if json_path:
+        candidates.append(json_path)
+    if html_path:
+        candidates.append(html_path)
+    if subtitle_path:
+        candidates.append(subtitle_path)
+    if commentary_plan_path:
+        candidates.append(commentary_plan_path)
+
+    if candidates:
+        stem = max(candidates, key=lambda path: path.stat().st_mtime).stem
+    else:
+        stem = slug
+
+    # Normalize stem if this call is rewriting an existing commentary plan file.
+    stem = stem.removesuffix(".commentary-plan")
+    target = artifacts / f"{stem}.commentary-plan.json"
+    target.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    return target
+
+
 def load_artifact_for_slug(slug: str) -> DeepDiveArtifact | None:
     json_path = latest_json_artifact_for_slug(slug)
     if json_path is None or not json_path.exists():
@@ -199,11 +315,13 @@ def _entry_mtime(entry: dict[str, Path | None]) -> float:
     markdown_path = entry["markdown"]
     json_path = entry["json"]
     html_path = entry["html"]
+    tts_audio_path = entry["tts_audio"]
 
     markdown_mtime = markdown_path.stat().st_mtime if markdown_path else 0.0
     json_mtime = json_path.stat().st_mtime if json_path else 0.0
     html_mtime = html_path.stat().st_mtime if html_path else 0.0
-    return max(markdown_mtime, json_mtime, html_mtime)
+    tts_audio_mtime = tts_audio_path.stat().st_mtime if tts_audio_path else 0.0
+    return max(markdown_mtime, json_mtime, html_mtime, tts_audio_mtime)
 
 
 def _render_artifact_html(artifact: DeepDiveArtifact) -> str:

@@ -87,3 +87,32 @@ def process_mode(override: str | None = None) -> str:
     if raw in {"hierarchical", "sequential"}:
         return raw
     return "hierarchical"
+
+
+def commentary_planner_model_name() -> str:
+    """Return model for commentary planning, preferring a smart model override."""
+
+    explicit = os.getenv("MODEL_NAME_COMMENTARY_PLANNER", "").strip()
+    if explicit:
+        return explicit
+
+    # Prefer high-capability model slots before generic fallback.
+    editor_model = os.getenv("MODEL_NAME_SCRIPT_EDITOR", "").strip()
+    if editor_model:
+        return editor_model
+
+    return model_name()
+
+
+def commentary_planning_goal() -> str:
+    """Return app-controlled objective for subtitle+report commentary planning."""
+
+    return os.getenv(
+        "COMMENTARY_PLANNING_GOAL",
+        (
+            "Generate a spoiler-aware audio commentary track from subtitle cues and the report. "
+            "Use the report as the source of insights, align each insight to the first subtitle context "
+            "that supports it, add a short reveal delay, keep pacing smooth, and avoid clustering dense facts. "
+            "Prefer narrative clarity and emotional flow over trivia density."
+        ),
+    ).strip()

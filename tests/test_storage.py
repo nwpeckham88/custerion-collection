@@ -9,7 +9,9 @@ from pathlib import Path
 from custerion_collection.models import CommentarySegment, DeepDiveArtifact, DeepDiveSection, FilmIdentity, RunDiagnostics
 from custerion_collection.storage import (
     list_recent_artifacts,
+    latest_subtitle_artifact_for_slug,
     load_artifact_for_slug,
+    upsert_subtitle_artifact_for_slug,
     write_artifact_bundle,
     write_markdown_artifact,
     write_run_diagnostics,
@@ -149,6 +151,32 @@ class TestStorage(unittest.TestCase):
             assert loaded is not None
             self.assertEqual(len(loaded.commentary_segments), 1)
             self.assertEqual(loaded.commentary_segments[0].timestamp_ms, 30000)
+
+    def test_upsert_subtitle_artifact_for_slug_creates_srt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["DATA_DIR"] = tmp
+            artifact = DeepDiveArtifact(
+                film=FilmIdentity(title="Test Film", year=2020, canonical_id="local:test-film:2020"),
+                personalized_intro="intro",
+                sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+                watch_next=[],
+                known_unknowns=[],
+                follow_up_media=[],
+                citations=[],
+                created_at=datetime.now(timezone.utc),
+            )
+            write_artifact_bundle(title="Test Film", markdown="content", artifact=artifact)
+
+            path = upsert_subtitle_artifact_for_slug(
+                slug="test-film",
+                subtitle_text="1\n00:00:02,000 --> 00:00:03,000\nLine\n\n",
+            )
+
+            self.assertTrue(path.exists())
+            self.assertEqual(path.suffix, ".srt")
+            self.assertIn("00:00:02,000", path.read_text(encoding="utf-8"))
+            latest = latest_subtitle_artifact_for_slug("test-film")
+            self.assertIsNotNone(latest)
 
 
 if __name__ == "__main__":

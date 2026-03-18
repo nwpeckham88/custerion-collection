@@ -140,6 +140,24 @@ Notes:
 - First playback can take longer while the model is downloaded and initialized.
 - Subsequent playback reuses the cached model and cached audio when text/voice are unchanged.
 
+## Goal-Driven Commentary Planning From Subtitles
+Importing subtitles in the guided commentary page can now generate a planned audio timeline instead of replaying raw subtitle lines.
+
+- The planner goal is app-controlled (not user-authored) so behavior stays consistent across runs.
+- The planner ingests both subtitle cues and the generated report markdown to schedule commentary beats.
+- The backend aligns report facts to matching on-screen context and delays delivery by a small buffer.
+- Planned timelines are cached to `data/artifacts/*.commentary-plan.json` and reused by `/api/artifacts/{slug}/commentary`.
+
+Optional environment controls:
+
+```bash
+COMMENTARY_PLANNING_GOAL="Create spoiler-aware, engaging commentary paced across the runtime"
+MODEL_NAME_COMMENTARY_PLANNER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
+```
+
+`MODEL_NAME_COMMENTARY_PLANNER` should point to your highest-quality planning model.
+When the planner model fails at runtime, the service falls back to deterministic heuristics.
+
 Use `--suggest` instead of `--title` to run suggestion mode.
 
 Suggestion mode selection order:

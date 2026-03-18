@@ -9,6 +9,7 @@
 		markdown_path: string | null;
 		artifact_json_path: string | null;
 		html_path: string | null;
+		tts_audio_path: string | null;
 		updated_at: string;
 	};
 
@@ -360,9 +361,12 @@
 								</div>
 								<div class="artifact-links">
 									{#if artifact.html_path}
-										<a href={`/api/artifacts/${artifact.slug}/html`} target="_blank" rel="noopener noreferrer">Open HTML report</a>
+										<a href={`/artifacts/${artifact.slug}/report`} target="_blank" rel="noopener noreferrer">Open report page</a>
 									{/if}
 									<a href={`/artifacts/${artifact.slug}/commentary`}>Open guided commentary</a>
+									{#if artifact.tts_audio_path}
+										<a href={`/artifacts/${artifact.slug}/tts`}>Open TTS commentary</a>
+									{/if}
 								</div>
 								<div class="artifact-actions">
 									<Button

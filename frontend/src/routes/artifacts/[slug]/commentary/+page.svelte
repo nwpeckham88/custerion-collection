@@ -25,6 +25,13 @@
 		};
 	};
 
+	type VoicePayload = {
+		slug: string;
+		model: string;
+		default_voice: string;
+		voices: string[];
+	};
+
 	const slug = $derived(page.params.slug ?? '');
 	let loading = $state(true);
 	let error = $state('');
@@ -33,6 +40,17 @@
 	let isPlaying = $state(false);
 	let playbackRate = $state(1);
 	let realtimePreview = $state<Segment[]>([]);
+	let subtitleText = $state('');
+	let subtitleImportState = $state('');
+	let subtitleImportError = $state('');
+	let ttsVoices = $state<string[]>([]);
+	let ttsVoice = $state('');
+	let ttsMode = $state<'summary' | 'full'>('summary');
+	let ttsRuntime = $state('');
+	let ttsLoading = $state(false);
+	let ttsError = $state('');
+	let ttsStatus = $state('');
+	let ttsAudio = $state<HTMLAudioElement | null>(null);
 
 	let timer: ReturnType<typeof setInterval> | null = null;
 
@@ -91,6 +109,56 @@
 		}
 	}
 
+	async function loadTtsVoices(): Promise<void> {
+		ttsLoading = true;
+		ttsError = '';
+
+		try {
+			const response = await fetch(`/api/artifacts/${encodeURIComponent(slug)}/tts/voices`);
+			const data = (await response.json()) as VoicePayload | { detail?: string };
+			if (!response.ok) {
+				throw new Error((data as { detail?: string }).detail ?? 'TTS voices unavailable');
+			}
+
+			ttsVoices = Array.isArray((data as VoicePayload).voices) ? (data as VoicePayload).voices : [];
+			ttsVoice = (data as VoicePayload).default_voice || ttsVoices[0] || ttsVoice || 'default';
+			ttsRuntime = (data as VoicePayload).model;
+		} catch (err) {
+			ttsError = String(err);
+		} finally {
+			ttsLoading = false;
+		}
+	}
+
+	async function playTts(): Promise<void> {
+		ttsStatus = 'Generating narration...';
+		ttsError = '';
+
+		if (!ttsAudio) {
+			ttsStatus = '';
+			return;
+		}
+
+		const voice = ttsVoice || 'default';
+		ttsAudio.src = `/api/artifacts/${encodeURIComponent(slug)}/tts/audio?voice=${encodeURIComponent(voice)}&mode=${encodeURIComponent(ttsMode)}`;
+
+		try {
+			await ttsAudio.play();
+			ttsStatus = 'TTS playback started.';
+		} catch (err) {
+			ttsError = String(err);
+			ttsStatus = '';
+		}
+	}
+
+	function stopTts(): void {
+		if (!ttsAudio) {
+			return;
+		}
+		ttsAudio.pause();
+		ttsAudio.currentTime = 0;
+	}
+
 	async function refreshRealtimePreview(): Promise<void> {
 		if (!payload) {
 			return;
@@ -108,8 +176,44 @@
 		}
 	}
 
+	async function importSubtitleText(): Promise<void> {
+		subtitleImportState = 'Importing subtitles...';
+		subtitleImportError = '';
+
+		try {
+			const response = await fetch(`/api/artifacts/${encodeURIComponent(slug)}/commentary/subtitles`, {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ subtitle_text: subtitleText })
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.detail ?? 'Subtitle import failed');
+			}
+
+			subtitleImportState = `Imported ${data.segment_count} subtitle cues.`;
+			await loadCommentary();
+		} catch (err) {
+			subtitleImportError = String(err);
+			subtitleImportState = '';
+		}
+	}
+
+	async function importSubtitleFile(event: Event): Promise<void> {
+		const target = event.currentTarget as HTMLInputElement;
+		const file = target.files?.[0];
+		if (!file) {
+			return;
+		}
+
+		subtitleText = await file.text();
+		await importSubtitleText();
+		target.value = '';
+	}
+
 	onMount(() => {
 		void loadCommentary();
+		void loadTtsVoices();
 	});
 
 	$effect(() => {
@@ -156,6 +260,77 @@
 		{:else if error}
 			<div class="rounded-2xl border border-red-300 bg-red-50 p-4 text-red-900">{error}</div>
 		{:else if payload}
+			<section class="rounded-2xl border border-black/10 bg-white/85 p-5 shadow-sm">
+				<h2 class="text-xl font-semibold">TTS Narration</h2>
+				<p class="mt-2 text-sm text-black/70">Play audio narration for the current film report while you follow the timeline commentary.</p>
+				<div class="mt-3 flex flex-wrap items-end gap-2">
+					<label class="grid gap-1 text-sm">
+						<span class="text-xs uppercase tracking-[0.14em] text-black/65">Voice</span>
+						<select bind:value={ttsVoice} disabled={ttsLoading || ttsVoices.length === 0} class="rounded-md border border-black/15 bg-white px-2 py-1">
+							{#if ttsVoices.length === 0}
+								<option value="default">default</option>
+							{:else}
+								{#each ttsVoices as voice}
+									<option value={voice}>{voice}</option>
+								{/each}
+							{/if}
+						</select>
+					</label>
+					<label class="grid gap-1 text-sm">
+						<span class="text-xs uppercase tracking-[0.14em] text-black/65">Read Mode</span>
+						<select bind:value={ttsMode} class="rounded-md border border-black/15 bg-white px-2 py-1">
+							<option value="summary">Summary</option>
+							<option value="full">Full report</option>
+						</select>
+					</label>
+					<Button class="border-0 bg-emerald-700 text-white hover:bg-emerald-800" onclick={playTts}>Play narration</Button>
+					<Button variant="outline" onclick={stopTts}>Stop</Button>
+					<Button variant="outline" onclick={loadTtsVoices} disabled={ttsLoading}>
+						{ttsLoading ? 'Loading...' : 'Reload voices'}
+					</Button>
+				</div>
+				{#if ttsRuntime}
+					<p class="mt-2 text-xs text-black/60">Runtime: {ttsRuntime}</p>
+				{/if}
+				{#if ttsStatus}
+					<p class="mt-2 text-sm text-emerald-800">{ttsStatus}</p>
+				{/if}
+				{#if ttsError}
+					<p class="mt-2 text-sm text-red-700">{ttsError}</p>
+				{/if}
+				<audio bind:this={ttsAudio} controls class="mt-3 w-full"></audio>
+			</section>
+
+			<section class="rounded-2xl border border-black/10 bg-white/85 p-5 shadow-sm">
+				<h2 class="text-xl font-semibold">Subtitle Import (SRT)</h2>
+				<p class="mt-2 text-sm text-black/70">
+					Use any `.srt` file. The app will run a smart planner that aligns report insights to subtitle-timed beats.
+				</p>
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<input
+						type="file"
+						accept=".srt,text/plain"
+						onchange={importSubtitleFile}
+						class="block text-sm"
+					/>
+					<Button variant="outline" onclick={importSubtitleText} disabled={!subtitleText.trim()}>
+						Import pasted SRT
+					</Button>
+				</div>
+				<textarea
+					bind:value={subtitleText}
+					rows="6"
+					placeholder="Paste SRT here..."
+					class="mt-3 w-full rounded-lg border border-black/15 bg-white p-3 text-sm"
+				></textarea>
+				{#if subtitleImportState}
+					<p class="mt-2 text-sm text-emerald-800">{subtitleImportState}</p>
+				{/if}
+				{#if subtitleImportError}
+					<p class="mt-2 text-sm text-red-700">{subtitleImportError}</p>
+				{/if}
+			</section>
+
 			<div class="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
 				<section class="rounded-2xl border border-black/10 bg-white/85 p-5 shadow-sm">
 					<div class="flex flex-wrap items-center gap-2 text-xs text-black/65">

@@ -13,13 +13,26 @@ from fastapi.responses import FileResponse
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+import json
+
+from custerion_collection.commentary import (
+    build_commentary_planner_instruction,
+    build_goal_driven_commentary_plan,
+    commentary_plan_payload,
+    parse_commentary_plan_payload,
+    parse_srt_to_commentary_segments,
+)
 from custerion_collection.service import execute_deep_dive, render_html_report_with_retry
 from custerion_collection.storage import (
     artifact_title_for_slug,
+    latest_commentary_plan_artifact_for_slug,
     list_recent_artifacts,
+    latest_subtitle_artifact_for_slug,
+    upsert_commentary_plan_artifact_for_slug,
     load_artifact_for_slug,
     latest_html_artifact_for_slug,
     latest_markdown_artifact_for_slug,
+    upsert_subtitle_artifact_for_slug,
     upsert_html_artifact_for_slug,
 )
 from custerion_collection.tts import list_tts_voices_for_slug, synthesize_tts_audio_for_slug, tts_runtime_label
@@ -57,6 +70,7 @@ class ArtifactSummary(BaseModel):
     markdown_path: str | None = None
     artifact_json_path: str | None = None
     html_path: str | None = None
+    tts_audio_path: str | None = None
     updated_at: str
 
 
@@ -116,6 +130,19 @@ class ArtifactCommentaryRealtimeResponse(BaseModel):
     position_ms: int
     active_segment: CommentarySegmentResponse | None = None
     upcoming_segments: list[CommentarySegmentResponse] = Field(default_factory=list)
+
+
+class CommentarySubtitleImportRequest(BaseModel):
+    subtitle_text: str = Field(min_length=1)
+
+
+class CommentarySubtitleImportResponse(BaseModel):
+    slug: str
+    subtitle_path: str
+    commentary_plan_path: str | None = None
+    planning_goal: str
+    segment_count: int
+    commentary_mode: str
 
 
 _PLACEHOLDER_URL_RE = re.compile(r"https?://(?:www\.)?(example\.com|example\.org|example\.net|localhost)(?:/[^\s\"'<>]*)?", re.IGNORECASE)
@@ -195,6 +222,29 @@ def _inject_tts_controls(html: str, slug: str) -> str:
     if "</body>" in html:
         return html.replace("</body>", block + "\n</body>")
     return html + block
+
+
+def _subtitle_segments_for_slug(slug: str) -> list[CommentarySegmentResponse]:
+    commentary_plan_path = latest_commentary_plan_artifact_for_slug(slug)
+    if commentary_plan_path is not None and commentary_plan_path.exists():
+        try:
+            payload = json.loads(commentary_plan_path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                planned_segments = parse_commentary_plan_payload(payload)
+                if planned_segments:
+                    return [CommentarySegmentResponse(**segment.model_dump()) for segment in planned_segments]
+        except Exception:
+            pass
+
+    subtitle_path = latest_subtitle_artifact_for_slug(slug)
+    if subtitle_path is None or not subtitle_path.exists():
+        return []
+
+    subtitle_text = subtitle_path.read_text(encoding="utf-8")
+    return [
+        CommentarySegmentResponse(**segment.model_dump())
+        for segment in parse_srt_to_commentary_segments(subtitle_text)
+    ]
 
 
 def _origins_from_env() -> list[str]:
@@ -449,19 +499,26 @@ def get_artifact_commentary(slug: str) -> ArtifactCommentaryResponse:
     if artifact is None:
         raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
 
+    segments = [CommentarySegmentResponse(**segment.model_dump()) for segment in artifact.commentary_segments]
+    commentary_mode = artifact.commentary_mode
+    if not segments:
+        segments = _subtitle_segments_for_slug(slug)
+        if segments:
+            commentary_mode = "timed"
+
     duration_ms = 0
-    timed = [segment.timestamp_ms for segment in artifact.commentary_segments if segment.timestamp_ms is not None]
+    timed = [segment.timestamp_ms for segment in segments if segment.timestamp_ms is not None]
     if timed:
-        duration_ms = max(timed)
+        duration_ms = max(int(ts) for ts in timed)
     elif artifact.film.runtime_minutes:
         duration_ms = artifact.film.runtime_minutes * 60 * 1000
 
     return ArtifactCommentaryResponse(
         slug=slug,
         title=artifact.film.title,
-        commentary_mode=artifact.commentary_mode,
+        commentary_mode=commentary_mode,
         duration_ms=duration_ms,
-        segments=[CommentarySegmentResponse(**segment.model_dump()) for segment in artifact.commentary_segments],
+        segments=segments,
         external_playback={
             "provider": "jellyfin",
             "itemId": artifact.film.external_ids.get("jellyfin_item_id"),
@@ -481,13 +538,20 @@ def get_artifact_commentary_realtime(
     if artifact is None:
         raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
 
+    segments = [CommentarySegmentResponse(**segment.model_dump()) for segment in artifact.commentary_segments]
+    commentary_mode = artifact.commentary_mode
+    if not segments:
+        segments = _subtitle_segments_for_slug(slug)
+        if segments:
+            commentary_mode = "timed"
+
     bounded_position = max(0, position_ms)
     bounded_window = max(1000, min(window_ms, 120000))
     bounded_limit = max(1, min(limit, 20))
 
     active = None
     upcoming = []
-    for segment in artifact.commentary_segments:
+    for segment in segments:
         ts = segment.timestamp_ms
         if ts is None:
             continue
@@ -501,10 +565,52 @@ def get_artifact_commentary_realtime(
 
     return ArtifactCommentaryRealtimeResponse(
         slug=slug,
-        commentary_mode=artifact.commentary_mode,
+        commentary_mode=commentary_mode,
         position_ms=bounded_position,
-        active_segment=CommentarySegmentResponse(**active.model_dump()) if active else None,
-        upcoming_segments=[CommentarySegmentResponse(**segment.model_dump()) for segment in upcoming],
+        active_segment=active,
+        upcoming_segments=upcoming,
+    )
+
+
+@app.post("/artifacts/{slug}/commentary/subtitles", response_model=CommentarySubtitleImportResponse)
+def import_artifact_commentary_subtitles(
+    slug: str,
+    request: CommentarySubtitleImportRequest,
+) -> CommentarySubtitleImportResponse:
+    artifact = load_artifact_for_slug(slug)
+    if artifact is None:
+        raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
+
+    segments = parse_srt_to_commentary_segments(request.subtitle_text)
+    if not segments:
+        raise HTTPException(status_code=400, detail="No valid subtitle cues found in provided SRT text")
+
+    subtitle_path = upsert_subtitle_artifact_for_slug(slug=slug, subtitle_text=request.subtitle_text)
+    markdown_path = latest_markdown_artifact_for_slug(slug)
+    report_markdown = markdown_path.read_text(encoding="utf-8") if markdown_path and markdown_path.exists() else ""
+    planning_goal = build_commentary_planner_instruction(artifact)
+
+    planned_segments = build_goal_driven_commentary_plan(
+        subtitle_text=request.subtitle_text,
+        artifact=artifact,
+        report_markdown=report_markdown,
+    )
+    commentary_plan_path = None
+    if planned_segments:
+        plan_payload = commentary_plan_payload(
+            segments=planned_segments,
+            goal=planning_goal,
+            planner="goal_planner",
+        )
+        commentary_plan_path = upsert_commentary_plan_artifact_for_slug(slug=slug, payload=plan_payload)
+
+    return CommentarySubtitleImportResponse(
+        slug=slug,
+        subtitle_path=str(subtitle_path),
+        commentary_plan_path=str(commentary_plan_path) if commentary_plan_path else None,
+        planning_goal=planning_goal,
+        segment_count=len(planned_segments) if planned_segments else len(segments),
+        commentary_mode="timed",
     )
 
 

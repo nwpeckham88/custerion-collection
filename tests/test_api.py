@@ -249,6 +249,69 @@ class TestApi(unittest.TestCase):
         self.assertEqual(payload["active_segment"]["timestamp_ms"], 10000)
         self.assertEqual(payload["upcoming_segments"][0]["timestamp_ms"], 25000)
 
+    @patch("custerion_collection.api.latest_commentary_plan_artifact_for_slug")
+    @patch("custerion_collection.api.latest_subtitle_artifact_for_slug")
+    @patch("custerion_collection.api.load_artifact_for_slug")
+    def test_artifact_commentary_falls_back_to_subtitles(
+        self,
+        mock_load_artifact,
+        mock_subtitle_path,
+        mock_commentary_plan_path,
+    ) -> None:
+        mock_commentary_plan_path.return_value = None
+        mock_load_artifact.return_value = DeepDiveArtifact(
+            film=FilmIdentity(title="Blade Runner", year=1982, canonical_id="local:blade-runner:1982"),
+            personalized_intro="intro",
+            sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+            commentary_segments=[],
+            commentary_mode="none",
+            watch_next=[],
+            known_unknowns=[],
+            follow_up_media=[],
+            citations=[],
+            created_at=datetime.now(timezone.utc),
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".srt", mode="w+", encoding="utf-8") as tmp:
+            tmp.write("1\n00:00:05,000 --> 00:00:07,000\nRain falls on neon signs.\n\n")
+            tmp.flush()
+            mock_subtitle_path.return_value = Path(tmp.name)
+
+            response = self.client.get("/artifacts/blade-runner/commentary")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["commentary_mode"], "timed")
+        self.assertEqual(len(payload["segments"]), 1)
+        self.assertEqual(payload["segments"][0]["timestamp_ms"], 5000)
+
+    @patch("custerion_collection.api.upsert_subtitle_artifact_for_slug")
+    @patch("custerion_collection.api.load_artifact_for_slug")
+    def test_import_subtitles_success(self, mock_load_artifact, mock_upsert_subtitles) -> None:
+        mock_load_artifact.return_value = DeepDiveArtifact(
+            film=FilmIdentity(title="Blade Runner", year=1982, canonical_id="local:blade-runner:1982"),
+            personalized_intro="intro",
+            sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
+            commentary_segments=[],
+            commentary_mode="none",
+            watch_next=[],
+            known_unknowns=[],
+            follow_up_media=[],
+            citations=[],
+            created_at=datetime.now(timezone.utc),
+        )
+        mock_upsert_subtitles.return_value = Path("/tmp/blade-runner-20260317-220000.srt")
+
+        response = self.client.post(
+            "/artifacts/blade-runner/commentary/subtitles",
+            json={"subtitle_text": "1\n00:00:01,000 --> 00:00:02,000\nHello\n\n"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["segment_count"], 1)
+        self.assertEqual(payload["commentary_mode"], "timed")
+
 
 if __name__ == "__main__":
     unittest.main()

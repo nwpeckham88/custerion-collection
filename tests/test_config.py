@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from custerion_collection.config import (
     article_writer_model_name,
+    completion_temperature_for_model,
     html_report_model_name,
     model_name,
     openrouter_extra_headers,
@@ -150,6 +151,18 @@ class TestConfig(unittest.TestCase):
     )
     def test_openrouter_provider_preferences_invalid_json(self) -> None:
         self.assertIsNone(openrouter_provider_preferences())
+
+    def test_completion_temperature_for_gpt5_drops_custom_values(self) -> None:
+        self.assertIsNone(completion_temperature_for_model("openai/gpt-5.4-nano", 0.3))
+
+    def test_completion_temperature_for_gpt5_allows_one(self) -> None:
+        self.assertEqual(completion_temperature_for_model("openai/gpt-5", 1.0), 1.0)
+
+    def test_completion_temperature_for_non_gpt5_keeps_value(self) -> None:
+        self.assertEqual(
+            completion_temperature_for_model("openrouter/qwen/qwen3-next-80b-a3b-instruct:free", 0.2),
+            0.2,
+        )
 
 
 if __name__ == "__main__":

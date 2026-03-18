@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from custerion_collection.config import (
+    completion_temperature_for_model,
     commentary_planner_model_name,
     commentary_planning_goal,
     openrouter_extra_headers,
@@ -410,7 +411,11 @@ def _plan_with_llm(
                     "content": json.dumps(prompt_payload),
                 },
             ],
-            temperature=0.2,
+            **(
+                {"temperature": temp}
+                if (temp := completion_temperature_for_model(model, 0.2)) is not None
+                else {}
+            ),
             **completion_kwargs,
         )
     except Exception:

@@ -202,3 +202,16 @@ def openrouter_provider_preferences() -> dict[str, object] | None:
     if isinstance(parsed, dict):
         return parsed
     return None
+
+
+def completion_temperature_for_model(model: str, desired: float) -> float | None:
+    """Return a safe temperature value for the target model.
+
+    GPT-5 family models currently reject custom temperature values through
+    LiteLLM/OpenAI-compatible paths unless temperature is exactly 1.0.
+    """
+
+    normalized = model.strip().lower()
+    if "gpt-5" in normalized and desired != 1.0:
+        return None
+    return desired

@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
 from custerion_collection.config import (
+    completion_temperature_for_model,
     html_report_model_name,
     model_fallback_names,
     model_name,
@@ -195,7 +196,11 @@ def _render_html_report(markdown: str, selected_title: str) -> tuple[str | None,
                     ),
                 },
             ],
-            temperature=0.3,
+            **(
+                {"temperature": temp}
+                if (temp := completion_temperature_for_model(model, 0.3)) is not None
+                else {}
+            ),
             **completion_kwargs,
         )
         content = ""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from custerion_collection.commentary import build_goal_driven_commentary_plan, parse_srt_to_commentary_segments
 from custerion_collection.models import DeepDiveArtifact, DeepDiveSection, FilmIdentity
@@ -28,7 +29,8 @@ class TestCommentaryParser(unittest.TestCase):
         segments = parse_srt_to_commentary_segments(srt)
         self.assertEqual(segments, [])
 
-    def test_goal_driven_plan_delays_fact_after_matching_subtitle(self) -> None:
+    @patch("custerion_collection.commentary._plan_with_llm", return_value=[])
+    def test_goal_driven_plan_delays_fact_after_matching_subtitle(self, _mock_llm_plan) -> None:
         srt = (
             "1\n"
             "00:00:30,000 --> 00:00:31,000\n"

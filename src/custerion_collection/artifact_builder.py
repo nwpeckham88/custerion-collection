@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from custerion_collection.config import (
+    completion_temperature_for_model,
     model_name,
     openrouter_extra_headers,
     openrouter_provider_preferences,
@@ -226,7 +227,11 @@ def _llm_section_fallbacks(
                 },
                 {"role": "user", "content": str(prompt)},
             ],
-            temperature=0.6,
+            **(
+                {"temperature": temp}
+                if (temp := completion_temperature_for_model(model, 0.6)) is not None
+                else {}
+            ),
             **completion_kwargs,
         )
     except Exception:

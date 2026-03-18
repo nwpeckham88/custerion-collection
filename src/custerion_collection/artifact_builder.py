@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
+from custerion_collection.config import (
+    model_name,
+    openrouter_extra_headers,
+    openrouter_provider_preferences,
+)
 from custerion_collection.models import (
     CommentarySegment,
     DeepDiveArtifact,
@@ -30,6 +36,18 @@ _PLACEHOLDER_SOURCE_DOMAINS = {
 
 _TIMESTAMP_RE = re.compile(r"\[(?P<h>\d{1,2}):(?P<m>\d{2})(?::(?P<s>\d{2}))?\]")
 
+_SECTION_FAILURE_MARKERS = (
+    "limited confirmed detail",
+    "insufficient evidence",
+    "no reliable",
+    "lookup failed",
+    "unavailable",
+    "not configured",
+    "no cultural source match",
+    "no tmdb match",
+    "no jellyfin watch-history match",
+)
+
 
 def build_deep_dive_artifact(
     title: str,
@@ -40,7 +58,7 @@ def build_deep_dive_artifact(
     identity = film_identity or _infer_film_identity(title)
 
     intro = _extract_intro(heading_map, markdown)
-    sections = _build_core_sections(heading_map, markdown)
+    sections = _build_core_sections(heading_map, markdown, identity.title)
     commentary_segments, commentary_mode = _extract_commentary_segments(heading_map, markdown)
     watch_next = _extract_watch_next(heading_map)
     known_unknowns = _extract_known_unknowns(heading_map)
@@ -108,7 +126,7 @@ def _extract_intro(heading_map: dict[str, str], markdown: str) -> str:
     return "Personalized framing unavailable from generation output."
 
 
-def _build_core_sections(heading_map: dict[str, str], markdown: str) -> list[DeepDiveSection]:
+def _build_core_sections(heading_map: dict[str, str], markdown: str, film_title: str) -> list[DeepDiveSection]:
     # Keep section order stable for predictable rendering.
     ordered = [
         ("History", _find_section_text(heading_map, _SECTION_KEYWORDS["history"])),
@@ -117,10 +135,25 @@ def _build_core_sections(heading_map: dict[str, str], markdown: str) -> list[Dee
         ("Notable Lore", _find_section_text(heading_map, _SECTION_KEYWORDS["lore"])),
     ]
 
+    missing_sections = [
+        name
+        for name, content in ordered
+        if _section_needs_llm_fallback(content)
+    ]
+    llm_fallbacks = _llm_section_fallbacks(
+        missing_sections=missing_sections,
+        film_title=film_title,
+        markdown_context=markdown,
+    )
+
     sections: list[DeepDiveSection] = []
     for name, content in ordered:
         text = content.strip() if content else ""
-        confidence = 0.8 if text else 0.35
+        if _section_needs_llm_fallback(text) and name in llm_fallbacks:
+            text = llm_fallbacks[name]
+            confidence = 0.45
+        else:
+            confidence = 0.8 if text else 0.35
         sections.append(
             DeepDiveSection(
                 name=name,
@@ -139,6 +172,134 @@ def _build_core_sections(heading_map: dict[str, str], markdown: str) -> list[Dee
         )
 
     return sections
+
+
+def _llm_section_fallbacks(
+    *,
+    missing_sections: list[str],
+    film_title: str,
+    markdown_context: str,
+) -> dict[str, str]:
+    if not missing_sections:
+        return {}
+
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not (openai_key or openrouter_key):
+        return {}
+
+    try:
+        from litellm import completion  # type: ignore
+    except Exception:
+        return {}
+
+    model = model_name(role="Trivia Researcher")
+    prompt = {
+        "film_title": film_title,
+        "missing_sections": missing_sections,
+        "context_excerpt": markdown_context[:9000],
+        "requirements": [
+            "Return JSON object mapping section names to concise markdown paragraphs.",
+            "Do not include citations or URLs.",
+            "If uncertain, explicitly say details may be approximate.",
+        ],
+    }
+
+    completion_kwargs: dict[str, object] = {}
+    headers = openrouter_extra_headers()
+    provider_preferences = openrouter_provider_preferences()
+    if headers:
+        completion_kwargs["extra_headers"] = headers
+    if provider_preferences:
+        completion_kwargs["provider"] = provider_preferences
+
+    try:
+        response = completion(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a fallback film explainer filling missing report sections. "
+                        "Return only JSON object with requested section keys."
+                    ),
+                },
+                {"role": "user", "content": str(prompt)},
+            ],
+            temperature=0.6,
+            **completion_kwargs,
+        )
+    except Exception:
+        return {}
+
+    content = ""
+    if isinstance(response, dict):
+        content = str(response.get("choices", [{}])[0].get("message", {}).get("content", "") or "")
+    else:
+        choices = getattr(response, "choices", [])
+        if choices:
+            message = getattr(choices[0], "message", None)
+            if message is not None:
+                content = getattr(message, "content", "") or ""
+
+    parsed = _parse_json_object(content)
+    if not isinstance(parsed, dict):
+        return {}
+
+    disclaimer = (
+        "LLM-only fallback: this section is entirely generated by the Trivia LLM provider, "
+        "without verified search sources, and details may be hallucinated."
+    )
+    result: dict[str, str] = {}
+    for section_name in missing_sections:
+        raw = parsed.get(section_name)
+        if not isinstance(raw, str):
+            continue
+        cleaned = raw.strip()
+        if not cleaned:
+            continue
+        result[section_name] = f"{disclaimer}\n\n{cleaned}"
+    return result
+
+
+def _section_needs_llm_fallback(content: str | None) -> bool:
+    text = (content or "").strip()
+    if not text:
+        return True
+
+    lowered = text.lower()
+    return any(marker in lowered for marker in _SECTION_FAILURE_MARKERS)
+
+
+def _parse_json_object(content: str) -> dict[str, object] | None:
+    text = content.strip()
+    if not text:
+        return None
+
+    try:
+        import json
+
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+
+    try:
+        import json
+
+        parsed = json.loads(text[start : end + 1])
+        if isinstance(parsed, dict):
+            return parsed
+    except Exception:
+        return None
+
+    return None
 
 
 def _find_section_text(heading_map: dict[str, str], keywords: list[str]) -> str:

@@ -99,10 +99,24 @@ def fetch_cultural_context(title: str) -> str:
     )
     search_payload, search_error = _http_get_json(search_url)
     if search_error:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Cultural History",
+            failure_reason=search_error,
+        )
+        if fallback:
+            return fallback
         return f"Wikipedia cultural lookup failed for '{title}': {search_error}."
 
     search_hits = ((search_payload or {}).get("query") or {}).get("search", [])
     if not search_hits:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Cultural History",
+            failure_reason="No cultural source match found on Wikipedia",
+        )
+        if fallback:
+            return fallback
         return f"No cultural source match found on Wikipedia for '{title}'."
 
     top_hit = search_hits[0]
@@ -137,10 +151,24 @@ def fetch_technical_context(title: str) -> str:
     """Fetch production and craft signals from TMDb."""
     movie, error = _tmdb_resolve_movie(title)
     if error:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Technical Craft",
+            failure_reason=error,
+        )
+        if fallback:
+            return fallback
         return f"TMDb technical lookup failed for '{title}': {error}."
 
     details, details_error = _tmdb_movie_details(movie_id=movie["id"], append="credits")
     if details_error:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Technical Craft",
+            failure_reason=details_error,
+        )
+        if fallback:
+            return fallback
         return f"TMDb technical details failed for '{title}': {details_error}."
 
     credits = details.get("credits", {})
@@ -174,10 +202,24 @@ def fetch_industry_context(title: str) -> str:
     """Fetch production economics and market indicators from TMDb."""
     movie, error = _tmdb_resolve_movie(title)
     if error:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Industry",
+            failure_reason=error,
+        )
+        if fallback:
+            return fallback
         return f"TMDb industry lookup failed for '{title}': {error}."
 
     details, details_error = _tmdb_movie_details(movie_id=movie["id"], append="release_dates")
     if details_error:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Industry",
+            failure_reason=details_error,
+        )
+        if fallback:
+            return fallback
         return f"TMDb industry details failed for '{title}': {details_error}."
 
     budget = details.get("budget") or 0
@@ -272,6 +314,13 @@ def fetch_follow_up_media(title: str) -> str:
 
     bounded = deduped[:8]
     if not bounded:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Follow-up Media",
+            failure_reason="No approved follow-up media sources available",
+        )
+        if fallback:
+            return fallback
         return (
             f"No approved follow-up media sources available for '{title}'. "
             "Configure TMDB_API_KEY and/or YOUTUBE_API_KEY for richer links."
@@ -348,6 +397,13 @@ def fetch_scene_transcript_context(title: str) -> str:
                 hints.append(f"Plot context for scene anchoring: {snippet}.")
 
     if not hints:
+        fallback = _openrouter_grounded_research(
+            title=title,
+            section="Scene Transcript Context",
+            failure_reason="No reliable timestamped transcript context found",
+        )
+        if fallback:
+            return fallback
         return (
             f"No reliable timestamped transcript context found for '{title}'. "
             "Fallback guidance: generate untimed commentary lines with scene labels and keep statements source-grounded."
@@ -423,6 +479,132 @@ def _http_get_json(url: str, headers: dict[str, str] | None = None) -> tuple[dic
             time.sleep(backoff * (2**attempt))
 
     return None, last_error or "request failed"
+
+
+def _http_post_json(
+    url: str,
+    payload: dict,
+    headers: dict[str, str] | None = None,
+) -> tuple[dict | None, str | None]:
+    retries = _env_int("HTTP_RETRY_COUNT", default=2, minimum=0)
+    backoff = _env_float("HTTP_RETRY_BACKOFF_SECONDS", default=0.4, minimum=0.0)
+
+    merged_headers = {
+        "content-type": "application/json",
+    }
+    if headers:
+        merged_headers.update(headers)
+
+    body = json.dumps(payload).encode("utf-8")
+    last_error: str | None = None
+    for attempt in range(retries + 1):
+        request = Request(url=url, headers=merged_headers, data=body, method="POST")
+        try:
+            with urlopen(request, timeout=24) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw), None
+        except HTTPError as exc:
+            last_error = f"HTTP {exc.code}"
+            if exc.code not in (429, 500, 502, 503, 504):
+                break
+        except URLError as exc:
+            last_error = f"network error: {exc.reason}"
+        except TimeoutError:
+            last_error = "request timeout"
+        except json.JSONDecodeError:
+            return None, "invalid JSON response"
+
+        if attempt < retries:
+            time.sleep(backoff * (2**attempt))
+
+    return None, last_error or "request failed"
+
+
+def _openrouter_auth() -> tuple[str, str] | None:
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    key = openrouter_key or openai_key
+    if not key:
+        return None
+
+    openrouter_base = os.getenv("OPENROUTER_API_BASE", "").strip()
+    openai_base = os.getenv("OPENAI_BASE_URL", "").strip()
+    if openrouter_base:
+        return key, openrouter_base.rstrip("/")
+    if openai_base and "openrouter.ai" in openai_base.lower():
+        return key, openai_base.rstrip("/")
+    if key.startswith("sk-or-v1-"):
+        return key, "https://openrouter.ai/api/v1"
+    return None
+
+
+def _openrouter_grounded_research(
+    *,
+    title: str,
+    section: str,
+    failure_reason: str,
+) -> str | None:
+    auth = _openrouter_auth()
+    if auth is None:
+        return None
+
+    key, base_url = auth
+    model = os.getenv("OPENROUTER_GROUNDED_RESEARCH_MODEL", "openrouter/perplexity/sonar").strip()
+    if not model:
+        model = "openrouter/perplexity/sonar"
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+    }
+    referer = os.getenv("OPENROUTER_HTTP_REFERER", "").strip()
+    app_title = os.getenv("OPENROUTER_APP_TITLE", "").strip()
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if app_title:
+        headers["X-OpenRouter-Title"] = app_title
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a film research assistant. Provide grounded research with explicit source URLs. "
+                    "When uncertain, say so plainly and avoid fabricated certainty."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Section: {section}\n"
+                    f"Film: {title}\n"
+                    f"Primary provider failed: {failure_reason}\n\n"
+                    "Provide concise replacement context and include 2-5 source URLs inline."
+                ),
+            },
+        ],
+        "temperature": 0.2,
+    }
+
+    response, error = _http_post_json(f"{base_url}/chat/completions", payload=payload, headers=headers)
+    if error or not response:
+        return None
+
+    content = ""
+    choices = response.get("choices") if isinstance(response, dict) else None
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], dict) else None
+        if isinstance(message, dict):
+            content = str(message.get("content") or "").strip()
+
+    if not content:
+        return None
+
+    return (
+        f"OpenRouter grounded fallback for '{title}' ({section}) after provider failure '{failure_reason}'.\n"
+        f"Model: {model}.\n"
+        f"{content}"
+    )
 
 
 def _env_int(name: str, default: int, minimum: int | None = None, maximum: int | None = None) -> int:

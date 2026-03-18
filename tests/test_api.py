@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from custerion_collection.api import _RUNS, _RUNS_LOCK, app
+from custerion_collection.api import OpenRouterUsageResponse, _RUNS, _RUNS_LOCK, app
 from custerion_collection.models import CommentarySegment, DeepDiveArtifact, DeepDiveSection, FilmIdentity
 from custerion_collection.service import DeepDiveRunResult
 
@@ -59,6 +59,41 @@ class TestApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+
+    @patch("custerion_collection.api._fetch_openrouter_usage")
+    def test_openrouter_usage_success(self, mock_usage) -> None:
+        mock_usage.return_value = OpenRouterUsageResponse(
+            configured=True,
+            available=True,
+            usage_weekly=12.34,
+            usage_daily=1.2,
+            usage_monthly=44.1,
+            limit_remaining=90.0,
+            limit=100.0,
+        )
+
+        response = self.client.get("/usage/openrouter")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["configured"])
+        self.assertTrue(payload["available"])
+        self.assertEqual(payload["usage_weekly"], 12.34)
+
+    @patch("custerion_collection.api._fetch_openrouter_usage")
+    def test_openrouter_usage_not_configured(self, mock_usage) -> None:
+        mock_usage.return_value = OpenRouterUsageResponse(
+            configured=False,
+            available=False,
+            error="OpenRouter key/base not configured",
+        )
+
+        response = self.client.get("/usage/openrouter")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["configured"])
+        self.assertFalse(payload["available"])
 
     @patch("custerion_collection.api.list_recent_artifacts")
     def test_artifacts_list(self, mock_list_recent_artifacts) -> None:

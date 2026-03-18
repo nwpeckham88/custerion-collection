@@ -14,6 +14,18 @@
 	};
 
 	type ThemeMode = 'light' | 'dark';
+	type OpenRouterUsage = {
+		provider: string;
+		configured: boolean;
+		available: boolean;
+		usage_weekly: number | null;
+		usage_daily: number | null;
+		usage_monthly: number | null;
+		limit_remaining: number | null;
+		limit: number | null;
+		currency: string;
+		error: string | null;
+	};
 
 	let title = $state('Blade Runner (1982)');
 	let dryRun = $state(false);
@@ -40,6 +52,8 @@
 	let artifactDeleteErrors = $state<Record<string, string>>({});
 	let pendingDelete = $state<{ slug: string; title: string } | null>(null);
 	let themeMode = $state<ThemeMode>('light');
+	let openrouterUsage = $state<OpenRouterUsage | null>(null);
+	let openrouterUsageLabel = $state('loading...');
 
 	function applyTheme(mode: ThemeMode): void {
 		themeMode = mode;
@@ -87,7 +101,34 @@
 		}
 
 		await loadArtifacts();
+		await loadOpenRouterUsage();
 	});
+
+	async function loadOpenRouterUsage(): Promise<void> {
+		openrouterUsageLabel = 'loading...';
+
+		try {
+			const response = await fetch('/api/usage/openrouter');
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'OpenRouter usage request failed');
+			}
+
+			openrouterUsage = payload as OpenRouterUsage;
+			if (!openrouterUsage.configured) {
+				openrouterUsageLabel = 'not configured';
+				return;
+			}
+			if (!openrouterUsage.available) {
+				openrouterUsageLabel = 'unavailable';
+				return;
+			}
+			const weekly = openrouterUsage.usage_weekly;
+			openrouterUsageLabel = weekly == null ? 'n/a' : `$${weekly.toFixed(2)}`;
+		} catch (_error) {
+			openrouterUsageLabel = 'unavailable';
+		}
+	}
 
 	async function loadArtifacts(): Promise<void> {
 		artifactsLoading = true;
@@ -291,6 +332,10 @@
 				</p>
 			</div>
 			<div class="hero-right">
+				<div class="hero-stat">
+					<span>OpenRouter cost (week)</span>
+					<strong>{openrouterUsageLabel}</strong>
+				</div>
 				<div class="hero-stat">
 					<span>Workflow</span>
 					<strong>Start run -> Monitor -> Open report</strong>

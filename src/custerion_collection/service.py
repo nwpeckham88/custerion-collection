@@ -19,6 +19,7 @@ from custerion_collection.config import (
     model_name,
     openrouter_extra_headers,
     openrouter_provider_preferences,
+    validate_critical_env_vars,
 )
 from custerion_collection.identity import resolve_canonical_film_identity
 from custerion_collection.models import RunDiagnostics
@@ -248,6 +249,9 @@ def execute_deep_dive(
     progress_callback: Callable[[str, int], None] | None = None,
     event_callback: Callable[[str], None] | None = None,
 ) -> DeepDiveRunResult:
+    if not dry_run:
+        validate_critical_env_vars()
+
     def emit(stage: str, progress: int) -> None:
         if progress_callback is None:
             return

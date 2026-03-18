@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import re
 import logging
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 from datetime import datetime, timezone
 from threading import Lock
 from uuid import uuid4
@@ -110,6 +112,19 @@ class ArtifactTtsVoicesResponse(BaseModel):
     model: str
     default_voice: str
     voices: list[str]
+
+
+class OpenRouterUsageResponse(BaseModel):
+    provider: str = "openrouter"
+    configured: bool
+    available: bool
+    usage_weekly: float | None = None
+    usage_daily: float | None = None
+    usage_monthly: float | None = None
+    limit_remaining: float | None = None
+    limit: float | None = None
+    currency: str = "usd_credits"
+    error: str | None = None
 
 
 class CommentarySegmentResponse(BaseModel):
@@ -258,6 +273,83 @@ def _origins_from_env() -> list[str]:
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
+def _openrouter_auth() -> tuple[str, str] | None:
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    key = openrouter_key or openai_key
+    if not key:
+        return None
+
+    openrouter_base = os.getenv("OPENROUTER_API_BASE", "").strip()
+    openai_base = os.getenv("OPENAI_BASE_URL", "").strip()
+    if openrouter_base:
+        return key, openrouter_base.rstrip("/")
+    if openai_base and "openrouter.ai" in openai_base.lower():
+        return key, openai_base.rstrip("/")
+    if key.startswith("sk-or-v1-"):
+        return key, "https://openrouter.ai/api/v1"
+    return None
+
+
+def _fetch_openrouter_usage() -> OpenRouterUsageResponse:
+    auth = _openrouter_auth()
+    if auth is None:
+        return OpenRouterUsageResponse(configured=False, available=False, error="OpenRouter key/base not configured")
+
+    key, base_url = auth
+    request = Request(
+        url=f"{base_url}/key",
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+
+    try:
+        with urlopen(request, timeout=12) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        return OpenRouterUsageResponse(
+            configured=True,
+            available=False,
+            error=f"HTTP {exc.code}",
+        )
+    except URLError as exc:
+        return OpenRouterUsageResponse(
+            configured=True,
+            available=False,
+            error=f"network error: {exc.reason}",
+        )
+    except TimeoutError:
+        return OpenRouterUsageResponse(configured=True, available=False, error="request timeout")
+    except Exception as exc:
+        return OpenRouterUsageResponse(configured=True, available=False, error=str(exc))
+
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, dict):
+        return OpenRouterUsageResponse(configured=True, available=False, error="invalid response format")
+
+    def _to_float(name: str) -> float | None:
+        value = data.get(name)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    return OpenRouterUsageResponse(
+        configured=True,
+        available=True,
+        usage_weekly=_to_float("usage_weekly"),
+        usage_daily=_to_float("usage_daily"),
+        usage_monthly=_to_float("usage_monthly"),
+        limit_remaining=_to_float("limit_remaining"),
+        limit=_to_float("limit"),
+    )
+
+
 app = FastAPI(title="Custerion Collection API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -371,6 +463,11 @@ def health() -> dict[str, str]:
         "status": "ok",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/usage/openrouter", response_model=OpenRouterUsageResponse)
+def get_openrouter_usage() -> OpenRouterUsageResponse:
+    return _fetch_openrouter_usage()
 
 
 @app.post("/deep-dive", response_model=DeepDiveResponse)

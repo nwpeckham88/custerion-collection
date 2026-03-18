@@ -65,6 +65,21 @@ class TestTools(unittest.TestCase):
         self.assertIn("British drama film", output)
         self.assertIn("Released in 1948", output)
 
+    @patch("custerion_collection.tools._openrouter_grounded_research")
+    @patch("custerion_collection.tools._http_get_json")
+    def test_cultural_context_uses_openrouter_fallback_on_failure(
+        self,
+        mock_get_json,
+        mock_grounded,
+    ) -> None:
+        mock_get_json.return_value = (None, "HTTP 503")
+        mock_grounded.return_value = "OpenRouter grounded fallback for 'Blade Runner (1982)'"
+
+        output = fetch_cultural_context("Blade Runner (1982)")
+
+        self.assertIn("OpenRouter grounded fallback", output)
+        mock_grounded.assert_called_once()
+
     @patch("custerion_collection.tools._tmdb_movie_details")
     @patch("custerion_collection.tools._tmdb_resolve_movie")
     def test_technical_context_from_tmdb(self, mock_resolve, mock_details) -> None:

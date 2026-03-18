@@ -131,6 +131,14 @@ OPENROUTER_PROVIDER_PREFERENCES_JSON={"require_parameters":true,"zdr":true,"allo
 If `OPENROUTER_PROVIDER_PREFERENCES_JSON` is invalid JSON or not an object,
 it is ignored safely.
 
+Optional grounded-research fallback model:
+
+```bash
+# Used when primary research providers fail to return section context.
+# Should be a web-grounded model on OpenRouter.
+OPENROUTER_GROUNDED_RESEARCH_MODEL=openrouter/perplexity/sonar
+```
+
 ## Local TTS for Generated Reports
 Generated HTML reports include an in-page TTS control panel (voice select, play, stop).
 
@@ -172,6 +180,20 @@ MODEL_NAME_COMMENTARY_PLANNER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 
 `MODEL_NAME_COMMENTARY_PLANNER` should point to your highest-quality planning model.
 When the planner model fails at runtime, the service falls back to deterministic heuristics.
+
+## Missing-Section Fallback Behavior
+When a core report section (History, Craft, Industry, Notable Lore) has no grounded content,
+the backend now attempts a direct Trivia-model fallback for that section.
+
+- It uses the `MODEL_NAME_TRIVIA_RESEARCHER` override when set.
+- If unset, it falls back to the default `MODEL_NAME` provider/model.
+- Fallback section text is prefixed with an explicit warning that it is LLM-only,
+  lacks verified search sources, and may be hallucinated.
+- When primary research providers fail (TMDb/Wikipedia/Jellyfin paths), tools now
+    attempt OpenRouter grounded-research fallback before returning empty/failure-only context.
+
+The front page also includes an OpenRouter usage widget showing current-week cost
+(`usage_weekly`) from OpenRouter's key endpoint.
 
 Use `--suggest` instead of `--title` to run suggestion mode.
 

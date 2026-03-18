@@ -207,6 +207,11 @@ def build_deep_dive_crew(
         description=(
             "Write the final deep-dive as a polished film-magazine feature in one cohesive editorial voice. "
             "Make it vivid, readable, and fun while staying faithful to available evidence. "
+            "Treat the outputs from personalization, history, craft, market, trivia, commentary timeline, and follow-up curation "
+            "as required source material: include every substantive finding at least once in the final article, "
+            "woven naturally into the narrative rather than copied as notes. "
+            "Do not omit major findings just because they are inconvenient to structure; instead, group related details together "
+            "under the most relevant section and keep flow smooth. "
             "Do internal fact-validation silently; never narrate QA process, confidence scoring, or team workflow. "
             "Do not include project-management language such as 'open question', 'for the team', 'editor note', 'in this run', "
             "or 'workflow'. Replace missing-detail caveats with concise reader-facing caveats in natural prose. "
@@ -219,7 +224,10 @@ def build_deep_dive_crew(
             "6) ## Follow-Up Media. "
             "Keep the final piece publishable and avoid repeating the same sentence."
         ),
-        expected_output="Final deep-dive markdown that reads like a polished film magazine feature.",
+        expected_output=(
+            "Final deep-dive markdown that reads like a polished film magazine feature and comprehensively reflects "
+            "all substantive agent findings in organized narrative form."
+        ),
         agent=editor,
         context=[personalization, history, craft, market, trivia_notes, commentary_timeline, links],
     )

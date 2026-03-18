@@ -1,15 +1,14 @@
-name: CD
+name: CD (disabled)
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

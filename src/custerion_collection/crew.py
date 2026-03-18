@@ -134,6 +134,7 @@ def build_deep_dive_crew(
     history = Task(
         description=(
             f"Produce historical and critical context findings for '{title}'. "
+            "Start from Wikipedia seed context, then run planned follow-up searches for up to two additional rounds. "
             "Do not infer facts that are not supported by tool outputs."
         ),
         expected_output="Structured notes the editor can transform into engaging prose, with sources kept for internal validation.",
@@ -144,6 +145,8 @@ def build_deep_dive_crew(
     craft = Task(
         description=(
             f"Produce craft and technical findings for '{title}'. "
+            "Prioritize practical effects, visual design, and execution details. "
+            "Start from Wikipedia seed context, then run planned follow-up searches for up to two additional rounds. "
             "Do not infer facts that are not supported by tool outputs."
         ),
         expected_output="Structured technical notes with source grounding for internal validation.",
@@ -154,6 +157,7 @@ def build_deep_dive_crew(
     market = Task(
         description=(
             f"Produce production and market impact findings for '{title}'. "
+            "Start from Wikipedia seed context, then run planned follow-up searches for up to two additional rounds. "
             "Do not infer facts that are not supported by tool outputs."
         ),
         expected_output="Industry notes with source grounding for internal validation.",
@@ -174,6 +178,8 @@ def build_deep_dive_crew(
         description=(
             f"Produce 3 to 6 fun trivia facts about '{title}'. "
             "Prioritize surprising production details, creative decisions, and reception anecdotes that are still source-grounded. "
+            "Include at least one actor-focused insight when available from sources. "
+            "Start from Wikipedia seed context, then run planned follow-up searches for up to two additional rounds. "
             "Internally validate each fact with available sources before passing to the editor."
         ),
         expected_output=(

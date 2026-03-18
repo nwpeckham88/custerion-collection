@@ -204,6 +204,17 @@ the backend now attempts a direct Trivia-model fallback for that section.
 The front page also includes an OpenRouter usage widget showing current-week cost
 (`usage_weekly`) from OpenRouter's key endpoint.
 
+## Wikipedia-First Research Workflow
+Research agents now run a Wikipedia-first multi-hop workflow for high-signal discovery:
+
+- Start from a seed Wikipedia query for the film.
+- Generate a research plan from the seed article context.
+- Execute up to two additional follow-up query levels.
+- Limit each query to 3 results.
+
+Specialized research coverage includes production history, special effects/craft,
+actor-focused context, and trivia-oriented discovery before synthesis.
+
 Use `--suggest` instead of `--title` to run suggestion mode.
 
 Suggestion mode selection order:

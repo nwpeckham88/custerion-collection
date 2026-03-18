@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from custerion_collection.tools import (
+    _wikipedia_multi_hop_research,
     fetch_cultural_context,
     fetch_follow_up_media,
     fetch_history_context,
@@ -149,6 +150,61 @@ class TestTools(unittest.TestCase):
         self.assertIn("Wikipedia article", output)
         self.assertIn("Related film", output)
         self.assertIn("YouTube", output)
+
+    @patch("custerion_collection.tools._http_get_json")
+    def test_wikipedia_multi_hop_research_limits_depth_and_results(self, mock_get_json) -> None:
+        def _search_payload(label: str) -> dict:
+            return {
+                "query": {
+                    "search": [
+                        {"title": f"{label} A", "snippet": "alpha"},
+                        {"title": f"{label} B", "snippet": "beta"},
+                        {"title": f"{label} C", "snippet": "gamma"},
+                        {"title": f"{label} D", "snippet": "delta"},
+                    ]
+                }
+            }
+
+        mock_get_json.side_effect = [
+            (_search_payload("Seed"), None),
+            (
+                {
+                    "extract": "A dystopian science fiction film about identity and memory.",
+                    "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Blade_Runner"}},
+                },
+                None,
+            ),
+            (
+                {
+                    "parse": {
+                        "sections": [
+                            {"line": "Cast"},
+                            {"line": "Production"},
+                            {"line": "Release and reception"},
+                        ]
+                    }
+                },
+                None,
+            ),
+            (_search_payload("Followup1"), None),
+            (_search_payload("Followup2"), None),
+        ]
+
+        output = _wikipedia_multi_hop_research(
+            title="Blade Runner (1982)",
+            focus="trivia",
+            max_levels=3,
+            max_results_per_query=3,
+        )
+
+        self.assertIn("Level 1 seed query", output)
+        self.assertIn("Level 2", output)
+        self.assertIn("Level 3", output)
+        self.assertNotIn("Level 4", output)
+        self.assertIn("Seed sections", output)
+        self.assertIn("1. Followup1 A", output)
+        self.assertIn("3. Followup1 C", output)
+        self.assertNotIn("Followup1 D", output)
 
 
 if __name__ == "__main__":

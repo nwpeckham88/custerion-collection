@@ -299,6 +299,39 @@ def upsert_commentary_plan_artifact_for_slug(slug: str, payload: dict[str, Any])
     return target
 
 
+def delete_artifact_bundle_for_slug(slug: str) -> int:
+    artifacts = ensure_data_dirs()
+    deleted_count = 0
+
+    # Remove core artifacts and timeline adjuncts sharing the same slug prefix.
+    patterns = [
+        f"{slug}*.md",
+        f"{slug}*.json",
+        f"{slug}*.html",
+        f"{slug}*.srt",
+        f"{slug}*.commentary-plan.json",
+    ]
+    for pattern in patterns:
+        for path in artifacts.glob(pattern):
+            try:
+                path.unlink()
+                deleted_count += 1
+            except FileNotFoundError:
+                continue
+
+    # Remove synthesized TTS files for the artifact slug.
+    tts_dir = (artifacts / "tts").resolve()
+    if tts_dir.exists():
+        for path in list(tts_dir.glob(f"{slug}-*.wav")) + list(tts_dir.glob(f"{slug}-*.mp3")):
+            try:
+                path.unlink()
+                deleted_count += 1
+            except FileNotFoundError:
+                continue
+
+    return deleted_count
+
+
 def load_artifact_for_slug(slug: str) -> DeepDiveArtifact | None:
     json_path = latest_json_artifact_for_slug(slug)
     if json_path is None or not json_path.exists():

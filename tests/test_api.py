@@ -79,6 +79,25 @@ class TestApi(unittest.TestCase):
         self.assertEqual(len(response.json()), 1)
         self.assertEqual(response.json()[0]["title"], "Blade Runner (1982)")
 
+    @patch("custerion_collection.api.delete_artifact_bundle_for_slug")
+    def test_delete_artifact_success(self, mock_delete) -> None:
+        mock_delete.return_value = 4
+
+        response = self.client.delete("/artifacts/blade-runner-20260317-190129")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["slug"], "blade-runner-20260317-190129")
+        self.assertEqual(payload["deleted_count"], 4)
+
+    @patch("custerion_collection.api.delete_artifact_bundle_for_slug")
+    def test_delete_artifact_not_found(self, mock_delete) -> None:
+        mock_delete.return_value = 0
+
+        response = self.client.delete("/artifacts/missing-slug")
+
+        self.assertEqual(response.status_code, 404)
+
     @patch("custerion_collection.api._run_deep_dive_background")
     def test_deep_dive_start_queues_run(self, _mock_runner) -> None:
         response = self.client.post(

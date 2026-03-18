@@ -25,6 +25,7 @@ from custerion_collection.commentary import (
 from custerion_collection.service import execute_deep_dive, render_html_report_with_retry
 from custerion_collection.storage import (
     artifact_title_for_slug,
+    delete_artifact_bundle_for_slug,
     latest_commentary_plan_artifact_for_slug,
     list_recent_artifacts,
     latest_subtitle_artifact_for_slug,
@@ -97,6 +98,11 @@ class HtmlRegenerateResponse(BaseModel):
     slug: str
     html_path: str
     warning: str | None = None
+
+
+class ArtifactDeleteResponse(BaseModel):
+    slug: str
+    deleted_count: int
 
 
 class ArtifactTtsVoicesResponse(BaseModel):
@@ -442,6 +448,15 @@ def get_artifacts(limit: int = 20) -> list[ArtifactSummary]:
     bounded_limit = max(1, min(limit, 100))
     raw_items = list_recent_artifacts(limit=bounded_limit)
     return [ArtifactSummary(**item) for item in raw_items]
+
+
+@app.delete("/artifacts/{slug}", response_model=ArtifactDeleteResponse)
+def delete_artifact(slug: str) -> ArtifactDeleteResponse:
+    deleted_count = delete_artifact_bundle_for_slug(slug)
+    if deleted_count == 0:
+        raise HTTPException(status_code=404, detail=f"Artifact not found for slug: {slug}")
+
+    return ArtifactDeleteResponse(slug=slug, deleted_count=deleted_count)
 
 
 @app.get("/artifacts/{slug}/html", response_class=HTMLResponse)

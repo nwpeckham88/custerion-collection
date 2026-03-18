@@ -35,7 +35,10 @@
 	let artifactsLoading = $state(false);
 	let artifactsError = $state('');
 	let regeneratingSlug = $state('');
+	let deletingSlug = $state('');
 	let artifactRegenerateErrors = $state<Record<string, string>>({});
+	let artifactDeleteErrors = $state<Record<string, string>>({});
+	let pendingDelete = $state<{ slug: string; title: string } | null>(null);
 	let themeMode = $state<ThemeMode>('light');
 
 	function applyTheme(mode: ThemeMode): void {
@@ -126,6 +129,48 @@
 			};
 		} finally {
 			regeneratingSlug = '';
+		}
+	}
+
+	function promptDeleteArtifact(slug: string, artifactTitle: string): void {
+		pendingDelete = { slug, title: artifactTitle };
+	}
+
+	function cancelDeleteArtifact(): void {
+		if (deletingSlug) {
+			return;
+		}
+		pendingDelete = null;
+	}
+
+	async function confirmDeleteArtifact(): Promise<void> {
+		if (!pendingDelete) {
+			return;
+		}
+
+		const { slug } = pendingDelete;
+
+		deletingSlug = slug;
+		artifactDeleteErrors = { ...artifactDeleteErrors, [slug]: '' };
+
+		try {
+			const response = await fetch(`/api/artifacts/${encodeURIComponent(slug)}`, {
+				method: 'DELETE'
+			});
+			const payload = await response.json();
+			if (!response.ok) {
+				throw new Error(payload?.detail ?? 'Artifact delete failed');
+			}
+
+			await loadArtifacts();
+			pendingDelete = null;
+		} catch (error) {
+			artifactDeleteErrors = {
+				...artifactDeleteErrors,
+				[slug]: String(error)
+			};
+		} finally {
+			deletingSlug = '';
 		}
 	}
 
@@ -377,10 +422,21 @@
 									>
 										{regeneratingSlug === artifact.slug ? 'Regenerating...' : 'Regenerate HTML'}
 									</Button>
+										<Button
+											variant="outline"
+											size="sm"
+											onclick={() => promptDeleteArtifact(artifact.slug, artifact.title)}
+											disabled={deletingSlug === artifact.slug}
+										>
+											{deletingSlug === artifact.slug ? 'Deleting...' : 'Delete artifact'}
+										</Button>
 								</div>
 								{#if artifactRegenerateErrors[artifact.slug]}
 									<div class="artifact-error">{artifactRegenerateErrors[artifact.slug]}</div>
 								{/if}
+									{#if artifactDeleteErrors[artifact.slug]}
+										<div class="artifact-error">{artifactDeleteErrors[artifact.slug]}</div>
+									{/if}
 							</li>
 						{/each}
 					</ul>
@@ -396,6 +452,32 @@
 				</div>
 				<pre>{resultMarkdown}</pre>
 			</section>
+		{/if}
+
+		{#if pendingDelete}
+			<div class="confirm-overlay" role="presentation">
+				<div
+					class="confirm-dialog"
+					role="dialog"
+					tabindex="-1"
+					aria-modal="true"
+					aria-labelledby="delete-artifact-title"
+				>
+					<h3 id="delete-artifact-title">Delete Artifact?</h3>
+					<p>
+						This will permanently remove <strong>{pendingDelete.title}</strong> and all associated markdown, JSON,
+						HTML, subtitle/commentary plan, and generated TTS files.
+					</p>
+					<div class="confirm-actions">
+						<Button variant="outline" onclick={cancelDeleteArtifact} disabled={Boolean(deletingSlug)}>
+							Cancel
+						</Button>
+						<Button class="delete-button" onclick={confirmDeleteArtifact} disabled={Boolean(deletingSlug)}>
+							{deletingSlug ? 'Deleting...' : 'Delete forever'}
+						</Button>
+					</div>
+				</div>
+			</div>
 		{/if}
 	</div>
 </main>
@@ -790,6 +872,54 @@
 		font-size: 0.8rem;
 		line-height: 1.48;
 		white-space: pre-wrap;
+	}
+
+	.confirm-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 30;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: color-mix(in oklch, black 40%, transparent);
+	}
+
+	.confirm-dialog {
+		width: min(560px, 100%);
+		border-radius: 1rem;
+		padding: 1rem;
+		border: 1px solid var(--panel-border);
+		background: var(--panel-bg);
+		box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+	}
+
+	.confirm-dialog h3 {
+		font-size: 1.1rem;
+		font-weight: 700;
+	}
+
+	.confirm-dialog p {
+		margin-top: 0.45rem;
+		font-size: 0.92rem;
+		line-height: 1.45;
+		color: var(--text-muted);
+	}
+
+	.confirm-actions {
+		margin-top: 0.9rem;
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+
+	:global(.delete-button) {
+		border: 0;
+		background: #b91c1c;
+		color: #fff;
+	}
+
+	:global(.delete-button:hover:enabled) {
+		background: #991b1b;
 	}
 
 	.reveal-1,

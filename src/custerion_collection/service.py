@@ -13,7 +13,13 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from custerion_collection.artifact_builder import build_deep_dive_artifact
-from custerion_collection.config import html_report_model_name, model_fallback_names, model_name
+from custerion_collection.config import (
+    html_report_model_name,
+    model_fallback_names,
+    model_name,
+    openrouter_extra_headers,
+    openrouter_provider_preferences,
+)
 from custerion_collection.identity import resolve_canonical_film_identity
 from custerion_collection.models import RunDiagnostics
 from custerion_collection.suggestion import suggest_film_title
@@ -119,6 +125,14 @@ def _render_html_report(markdown: str, selected_title: str) -> tuple[str | None,
     try:
         from litellm import completion  # type: ignore
 
+        completion_kwargs: dict[str, object] = {}
+        headers = openrouter_extra_headers()
+        provider_preferences = openrouter_provider_preferences()
+        if headers:
+            completion_kwargs["extra_headers"] = headers
+        if provider_preferences:
+            completion_kwargs["provider"] = provider_preferences
+
         response = completion(
             model=model,
             messages=[
@@ -144,6 +158,7 @@ def _render_html_report(markdown: str, selected_title: str) -> tuple[str | None,
                 },
             ],
             temperature=0.3,
+            **completion_kwargs,
         )
         content = ""
         if isinstance(response, dict):

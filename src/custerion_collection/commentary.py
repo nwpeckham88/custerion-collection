@@ -5,7 +5,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from custerion_collection.config import commentary_planner_model_name, commentary_planning_goal
+from custerion_collection.config import (
+    commentary_planner_model_name,
+    commentary_planning_goal,
+    openrouter_extra_headers,
+    openrouter_provider_preferences,
+)
 from custerion_collection.models import DeepDiveArtifact
 from custerion_collection.models import CommentarySegment
 
@@ -380,6 +385,14 @@ def _plan_with_llm(
         "report_markdown": report_markdown[:12000],
     }
 
+    completion_kwargs: dict[str, object] = {}
+    headers = openrouter_extra_headers()
+    provider_preferences = openrouter_provider_preferences()
+    if headers:
+        completion_kwargs["extra_headers"] = headers
+    if provider_preferences:
+        completion_kwargs["provider"] = provider_preferences
+
     try:
         response = completion(
             model=model,
@@ -398,6 +411,7 @@ def _plan_with_llm(
                 },
             ],
             temperature=0.2,
+            **completion_kwargs,
         )
     except Exception:
         return []

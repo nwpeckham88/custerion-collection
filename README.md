@@ -116,6 +116,21 @@ MODEL_NAME_HTML_REPORTER=openrouter/qwen/qwen3-next-80b-a3b-instruct:free
 
 When `MODEL_NAME_HTML_REPORTER` is unset, the project writes a deterministic styled HTML report locally.
 
+Optional OpenRouter request controls:
+
+```bash
+# Attribution headers (recommended by OpenRouter for app identification)
+OPENROUTER_HTTP_REFERER=https://example.com
+OPENROUTER_APP_TITLE=Custerion Collection
+
+# Optional provider routing object (JSON) forwarded as `provider`
+# Example: require parameter support, prefer zero data retention, allow fallback
+OPENROUTER_PROVIDER_PREFERENCES_JSON={"require_parameters":true,"zdr":true,"allow_fallbacks":true}
+```
+
+If `OPENROUTER_PROVIDER_PREFERENCES_JSON` is invalid JSON or not an object,
+it is ignored safely.
+
 ## Local TTS for Generated Reports
 Generated HTML reports include an in-page TTS control panel (voice select, play, stop).
 

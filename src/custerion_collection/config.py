@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -116,3 +117,33 @@ def commentary_planning_goal() -> str:
             "Prefer narrative clarity and emotional flow over trivia density."
         ),
     ).strip()
+
+
+def openrouter_extra_headers() -> dict[str, str]:
+    """Return optional OpenRouter attribution headers for direct API calls."""
+
+    headers: dict[str, str] = {}
+    referer = os.getenv("OPENROUTER_HTTP_REFERER", "").strip()
+    title = os.getenv("OPENROUTER_APP_TITLE", "").strip()
+    if referer:
+        headers["HTTP-Referer"] = referer
+    if title:
+        headers["X-OpenRouter-Title"] = title
+    return headers
+
+
+def openrouter_provider_preferences() -> dict[str, object] | None:
+    """Return optional OpenRouter provider routing object from JSON env."""
+
+    raw = os.getenv("OPENROUTER_PROVIDER_PREFERENCES_JSON", "").strip()
+    if not raw:
+        return None
+
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+
+    if isinstance(parsed, dict):
+        return parsed
+    return None

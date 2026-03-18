@@ -4,7 +4,14 @@ import os
 import unittest
 from unittest.mock import patch
 
-from custerion_collection.config import html_report_model_name, model_name, process_mode, sync_provider_env
+from custerion_collection.config import (
+    html_report_model_name,
+    model_name,
+    openrouter_extra_headers,
+    openrouter_provider_preferences,
+    process_mode,
+    sync_provider_env,
+)
 
 
 class TestConfig(unittest.TestCase):
@@ -75,6 +82,46 @@ class TestConfig(unittest.TestCase):
     @patch.dict(os.environ, {"PROCESS_MODE": "sequential"}, clear=True)
     def test_process_mode_invalid_override_falls_back(self) -> None:
         self.assertEqual(process_mode(override="invalid"), "hierarchical")
+
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_HTTP_REFERER": "https://local.example",
+            "OPENROUTER_APP_TITLE": "Custerion Collection",
+        },
+        clear=True,
+    )
+    def test_openrouter_extra_headers(self) -> None:
+        self.assertEqual(
+            openrouter_extra_headers(),
+            {
+                "HTTP-Referer": "https://local.example",
+                "X-OpenRouter-Title": "Custerion Collection",
+            },
+        )
+
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_PROVIDER_PREFERENCES_JSON": '{"require_parameters": true, "zdr": true}',
+        },
+        clear=True,
+    )
+    def test_openrouter_provider_preferences_valid_json(self) -> None:
+        self.assertEqual(
+            openrouter_provider_preferences(),
+            {"require_parameters": True, "zdr": True},
+        )
+
+    @patch.dict(
+        os.environ,
+        {
+            "OPENROUTER_PROVIDER_PREFERENCES_JSON": "not-json",
+        },
+        clear=True,
+    )
+    def test_openrouter_provider_preferences_invalid_json(self) -> None:
+        self.assertIsNone(openrouter_provider_preferences())
 
 
 if __name__ == "__main__":

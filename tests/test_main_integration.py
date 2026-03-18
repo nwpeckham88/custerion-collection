@@ -19,7 +19,7 @@ class TestMainIntegration(unittest.TestCase):
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             suggest=False,
             export_schema=False,
             schema_output=None,
@@ -27,7 +27,7 @@ class TestMainIntegration(unittest.TestCase):
             dry_run=False,
         )
         mock_execute_deep_dive.return_value = DeepDiveRunResult(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             markdown="## History\nContext https://example.com",
             status="success",
             warnings=["sample warning"],
@@ -40,7 +40,7 @@ class TestMainIntegration(unittest.TestCase):
         run()
 
         mock_execute_deep_dive.assert_called_once_with(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             suggestion_mode=False,
             process_mode_override="sequential",
             dry_run=False,
@@ -63,7 +63,7 @@ class TestMainIntegration(unittest.TestCase):
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             suggest=False,
             export_schema=False,
             schema_output=None,
@@ -112,7 +112,7 @@ class TestMainIntegration(unittest.TestCase):
         mock_parser,
     ) -> None:
         mock_parser.return_value.parse_args.return_value = Namespace(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             suggest=False,
             export_schema=False,
             schema_output=None,
@@ -120,7 +120,7 @@ class TestMainIntegration(unittest.TestCase):
             dry_run=True,
         )
         mock_execute_deep_dive.return_value = DeepDiveRunResult(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             markdown="dry run",
             status="success",
             warnings=["Dry-run mode enabled: CrewAI kickoff skipped."],
@@ -133,7 +133,7 @@ class TestMainIntegration(unittest.TestCase):
         run()
 
         mock_execute_deep_dive.assert_called_once_with(
-            title="The Red Shoes",
+            title="Blade Runner (1982)",
             suggestion_mode=False,
             process_mode_override="hierarchical",
             dry_run=True,

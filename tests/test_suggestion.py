@@ -21,7 +21,7 @@ class TestSuggestion(unittest.TestCase):
             {
                 "results": [
                     {"title": "Dune", "release_date": "2021-10-22", "vote_count": 1000, "popularity": 99.9},
-                    {"title": "The Red Shoes", "release_date": "1948-09-06", "vote_count": 400, "popularity": 25.0},
+                    {"title": "Blade Runner (1982)", "release_date": "1948-09-06", "vote_count": 400, "popularity": 25.0},
                 ]
             },
             None,
@@ -29,7 +29,7 @@ class TestSuggestion(unittest.TestCase):
 
         title, warnings = suggest_film_title()
 
-        self.assertEqual(title, "The Red Shoes (1948)")
+        self.assertEqual(title, "Blade Runner (1982) (1948)")
         self.assertEqual(warnings, [])
 
     @patch.dict(os.environ, {}, clear=True)

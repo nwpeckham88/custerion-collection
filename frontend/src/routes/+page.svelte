@@ -15,7 +15,7 @@
 
 	type ThemeMode = 'light' | 'dark';
 
-	let title = $state('The Red Shoes');
+	let title = $state('Blade Runner (1982)');
 	let dryRun = $state(false);
 	let suggest = $state(false);
 	let processMode = $state<'hierarchical' | 'sequential'>('hierarchical');
@@ -271,7 +271,7 @@
 				<div class="form-grid">
 					<label class="field">
 						<span>Film title</span>
-						<input bind:value={title} placeholder="e.g., The Red Shoes" />
+						<input bind:value={title} placeholder="e.g., Blade Runner (1982)" />
 					</label>
 
 					<label class="field">

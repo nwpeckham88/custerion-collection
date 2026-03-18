@@ -15,7 +15,7 @@ from custerion_collection.tools import (
 
 class TestTools(unittest.TestCase):
     def test_missing_configs_still_include_title(self) -> None:
-        title = "The Red Shoes"
+        title = "Blade Runner (1982)"
         outputs = [
             fetch_history_context(title),
             fetch_technical_context(title),
@@ -27,7 +27,7 @@ class TestTools(unittest.TestCase):
 
     @patch.dict(os.environ, {}, clear=True)
     def test_history_context_requires_jellyfin_env(self) -> None:
-        output = fetch_history_context("The Red Shoes")
+        output = fetch_history_context("Blade Runner (1982)")
         self.assertIn("Jellyfin adapter is not configured", output)
 
     @patch("custerion_collection.tools._http_get_json")
@@ -38,7 +38,7 @@ class TestTools(unittest.TestCase):
                     "query": {
                         "search": [
                             {
-                                "title": "The Red Shoes (film)",
+                                "title": "Blade Runner (1982) (film)",
                                 "snippet": "A <b>British</b> drama film",
                             }
                         ]
@@ -59,7 +59,7 @@ class TestTools(unittest.TestCase):
             ),
         ]
 
-        output = fetch_cultural_context("The Red Shoes")
+        output = fetch_cultural_context("Blade Runner (1982)")
 
         self.assertIn("Wikipedia match", output)
         self.assertIn("British drama film", output)
@@ -71,7 +71,7 @@ class TestTools(unittest.TestCase):
         mock_resolve.return_value = ({"id": 42}, None)
         mock_details.return_value = (
             {
-                "title": "The Red Shoes",
+                "title": "Blade Runner (1982)",
                 "release_date": "1948-09-06",
                 "runtime": 133,
                 "genres": [{"name": "Drama"}],
@@ -83,7 +83,7 @@ class TestTools(unittest.TestCase):
             None,
         )
 
-        output = fetch_technical_context("The Red Shoes")
+        output = fetch_technical_context("Blade Runner (1982)")
 
         self.assertIn("Michael Powell", output)
         self.assertIn("133 minutes", output)
@@ -98,7 +98,7 @@ class TestTools(unittest.TestCase):
             (
                 {
                     "query": {
-                        "search": [{"title": "The Red Shoes (film)"}],
+                        "search": [{"title": "Blade Runner (1982) (film)"}],
                     }
                 },
                 None,
@@ -128,7 +128,7 @@ class TestTools(unittest.TestCase):
             None,
         )
 
-        output = fetch_follow_up_media("The Red Shoes")
+        output = fetch_follow_up_media("Blade Runner (1982)")
 
         self.assertIn("bounded to", output)
         self.assertIn("Wikipedia article", output)

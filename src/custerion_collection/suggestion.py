@@ -27,7 +27,7 @@ def suggest_film_title() -> tuple[str, list[str]]:
         return recent_titles[0], warnings
 
     warnings.append("Suggestion fallback used because provider data was unavailable.")
-    return "The Red Shoes (1948)", warnings
+    return "Blade Runner (1982) (1948)", warnings
 
 
 def _tmdb_trending_candidate(blocklist: list[str]) -> tuple[str | None, str | None]:

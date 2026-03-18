@@ -20,7 +20,7 @@ class TestService(unittest.TestCase):
 
         with self.assertRaises(ValueError) as error:
             execute_deep_dive(
-                title="The Red Shoes (1948)",
+                title="Blade Runner (1982) (1948)",
                 suggestion_mode=False,
                 process_mode_override="hierarchical",
                 dry_run=False,
@@ -49,7 +49,7 @@ class TestService(unittest.TestCase):
 
         with self.assertRaises(ValueError) as error:
             execute_deep_dive(
-                title="The Red Shoes (1948)",
+                title="Blade Runner (1982) (1948)",
                 suggestion_mode=False,
                 process_mode_override="hierarchical",
                 dry_run=False,
@@ -93,7 +93,7 @@ class TestService(unittest.TestCase):
         mock_build_crew.side_effect = [first_crew, second_crew]
 
         result = execute_deep_dive(
-            title="The Red Shoes (1948)",
+            title="Blade Runner (1982) (1948)",
             suggestion_mode=False,
             process_mode_override="hierarchical",
             dry_run=False,
@@ -121,7 +121,7 @@ class TestService(unittest.TestCase):
 
         with self.assertRaises(ValueError) as error:
             execute_deep_dive(
-                title="The Red Shoes (1948)",
+                title="Blade Runner (1982) (1948)",
                 suggestion_mode=False,
                 process_mode_override="hierarchical",
                 dry_run=False,

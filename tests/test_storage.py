@@ -88,7 +88,7 @@ class TestStorage(unittest.TestCase):
             os.environ["DATA_DIR"] = tmp
 
             artifact = DeepDiveArtifact(
-                film=FilmIdentity(title="The Red Shoes", year=1948, canonical_id="local:the-red-shoes:1948"),
+                film=FilmIdentity(title="Blade Runner (1982)", year=1948, canonical_id="local:the-red-shoes:1948"),
                 personalized_intro="intro",
                 sections=[DeepDiveSection(name="History", content="x", confidence=0.7)],
                 watch_next=[],
@@ -98,16 +98,16 @@ class TestStorage(unittest.TestCase):
                 created_at=datetime.now(timezone.utc),
             )
 
-            write_artifact_bundle(title="The Red Shoes", markdown="bundle", artifact=artifact)
+            write_artifact_bundle(title="Blade Runner (1982)", markdown="bundle", artifact=artifact)
             write_markdown_artifact("Only Markdown", "markdown-only")
 
             items = list_recent_artifacts(limit=10)
 
             self.assertGreaterEqual(len(items), 2)
             titles = {item["title"] for item in items}
-            self.assertIn("The Red Shoes", titles)
+            self.assertIn("Blade Runner (1982)", titles)
             self.assertIn("Only Markdown", titles)
-            red_shoes = next(item for item in items if item["title"] == "The Red Shoes")
+            red_shoes = next(item for item in items if item["title"] == "Blade Runner (1982)")
             self.assertTrue(red_shoes["html_path"]) 
 
     def test_list_recent_artifacts_honors_limit(self) -> None:

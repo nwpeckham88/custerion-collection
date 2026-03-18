@@ -10,7 +10,7 @@ from custerion_collection.identity import resolve_canonical_film_identity
 class TestIdentityResolution(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_requires_tmdb_key(self) -> None:
-        result = resolve_canonical_film_identity("The Red Shoes")
+        result = resolve_canonical_film_identity("Blade Runner (1982)")
         self.assertIsNone(result.identity)
         self.assertIn("TMDB_API_KEY", result.error or "")
 

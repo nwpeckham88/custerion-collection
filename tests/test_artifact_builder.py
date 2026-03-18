@@ -36,9 +36,9 @@ Famously influenced later directors.
 3. Related film: https://www.themoviedb.org/movie/1
 """.strip()
 
-        artifact = build_deep_dive_artifact("The Red Shoes (1948)", markdown)
+        artifact = build_deep_dive_artifact("Blade Runner (1982) (1948)", markdown)
 
-        self.assertEqual(artifact.film.title, "The Red Shoes")
+        self.assertEqual(artifact.film.title, "Blade Runner (1982)")
         self.assertEqual(artifact.film.year, 1948)
         self.assertEqual([section.name for section in artifact.sections], ["History", "Craft", "Industry", "Notable Lore"])
         self.assertGreaterEqual(len(artifact.watch_next), 2)

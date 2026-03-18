@@ -31,7 +31,7 @@ cp .env.example .env
 4. Run:
 
 ```bash
-custerion --title "The Red Shoes"
+custerion --title "Blade Runner (1982)"
 ```
 
 ## Run As API + Frontend (Local)
@@ -178,13 +178,13 @@ If a run fails these gates, it is marked failed, diagnostics are written under `
 Override process mode per run:
 
 ```bash
-custerion --title "The Red Shoes" --process-mode sequential
+custerion --title "Blade Runner (1982)" --process-mode sequential
 ```
 
 Run a deterministic smoke pass without CrewAI/network calls:
 
 ```bash
-custerion --title "The Red Shoes" --dry-run
+custerion --title "Blade Runner (1982)" --dry-run
 ```
 
 ## Export Artifact Schema
